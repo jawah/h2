@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling>=1.6.0,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jh2"
+description = "HTTP/2 State-Machine based protocol implementation"
+readme = "README.rst"
+license-files = { paths = ["LICENSE"] }
+license = "MIT"
+keywords = ["http2", "hpack", "h2"]
+authors = [
+  {name = "Cory Benfield", email = "cory@lukasa.co.uk"}
+]
+maintainers = [
+  {name = "Ahmed R. TAHRI", email="ahmed.tahri@cloudnursery.dev"},
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries",
+]
+requires-python = ">=3.7"
+dynamic = ["version"]
+
+
+[project.urls]
+"Changelog" = "https://github.com/jawah/jh2/blob/main/CHANGELOG.rst"
+"Code" = "https://github.com/jawah/jh2"
+"Issue tracker" = "https://github.com/jawah/jh2/issues"
+
+[tool.hatch.version]
+path = "jh2/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/docs",
+    "/src",
+    "/jh2",
+    "/tests",
+    "/dev-requirements.txt",
+    "/CHANGELOG.rst",
+    "/README.rst",
+    "/LICENSE",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "jh2/",
+]
+
+[tool.isort]
+profile = "black"
+src_paths = ["jh2", "tests"]
+honor_noqa = true
+add_imports = "from __future__ import annotations"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+doctest_optionflags = "NORMALIZE_WHITESPACE ELLIPSIS"
+minversion = "6.2"
+testpaths = ["tests"]
+filterwarnings = [
+    "default",
+]
+
+[tool.coverage.run]
+branch = true
+source = "jh2"
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    'assert False, "Should not be reachable"',
+    ".*:.* # Python \\d.*",
+    ".*:.* # Platform-specific:"
+]
+[tool.coverage.paths]
+source = [
+    "jh2",
+    ".tox/*/site-packages"
+]

@@ -1,21 +1,14 @@
-=========================
-h2: HTTP/2 Protocol Stack
-=========================
+==========================
+jh2: HTTP/2 Protocol Stack
+==========================
 
-.. image:: https://github.com/python-hyper/h2/workflows/CI/badge.svg
-    :target: https://github.com/python-hyper/h2/actions
-    :alt: Build Status
-.. image:: https://codecov.io/gh/python-hyper/h2/branch/master/graph/badge.svg
-    :target: https://codecov.io/gh/python-hyper/h2
-    :alt: Code Coverage
-.. image:: https://readthedocs.org/projects/h2/badge/?version=latest
-    :target: https://h2.readthedocs.io/en/latest/
-    :alt: Documentation Status
-.. image:: https://img.shields.io/badge/chat-join_now-brightgreen.svg
-    :target: https://gitter.im/python-hyper/community
-    :alt: Chat community
+This repository is a fork of the well known hyper/h2 package. We want to provide a cleaner and faster HTTP/2
+state machine while keeping a pure Python implementation. We decided to embed the leaf dependencies as we want
+a neater dependency tree and along with that a easier maintenance burden. We believe it was a mistake to ship
+three packages (h2, hpack, and hyperframe).
 
-.. image:: https://raw.github.com/python-hyper/documentation/master/source/logo/hyper-black-bg-white.png
+Analysis shown that h2 spend a lot of time doing hpack encode and decode operations, this is why we decided to offer
+a complementary optimized build. The pure Python version will still be available.
 
 This repository contains a pure-Python implementation of a HTTP/2 protocol
 stack. It's written from the ground up to be embeddable in whatever program you
@@ -26,11 +19,11 @@ You use it like this:
 
 .. code-block:: python
 
-    import h2.connection
-    import h2.config
+    import jh2.connection
+    import jh2.config
 
-    config = h2.config.H2Configuration()
-    conn = h2.connection.H2Connection(config=config)
+    config = jh2.config.H2Configuration()
+    conn = jh2.connection.H2Connection(config=config)
     conn.send_headers(stream_id=stream_id, headers=headers)
     conn.send_data(stream_id, data)
     socket.sendall(conn.data_to_send())
@@ -45,7 +38,7 @@ To install it, just run:
 
 .. code-block:: console
 
-    $ python -m pip install h2
+    $ python -m pip install jh2
 
 Documentation
 =============
@@ -55,7 +48,7 @@ Documentation is available at https://h2.readthedocs.io .
 Contributing
 ============
 
-``h2`` welcomes contributions from anyone! Unlike many other projects we
+``jh2`` welcomes contributions from anyone! Unlike many other projects we
 are happy to accept cosmetic contributions and small contributions, in addition
 to large feature requests and changes.
 
@@ -67,11 +60,10 @@ please `read the contribution guidelines`_.
 License
 =======
 
-``h2`` is made available under the MIT License. For more details, see the
+``jh2`` is made available under the MIT License. For more details, see the
 ``LICENSE`` file in the repository.
 
 Authors
 =======
 
-``h2`` was authored by Cory Benfield and is maintained
-by the members of `python-hyper <https://github.com/orgs/python-hyper/people>`_.
+``h2`` was authored by Cory Benfield and is maintained by the Jawah OSS organization under the ``jh2`` name.

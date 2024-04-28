@@ -1,6 +1,15 @@
 Release History
 ===============
 
+5.0.0 (2024-04-28)
+------------------
+
+- Support for Python 3.6 has been dropped.
+- Integrated hpack and hyperframe into the package directly, thus avoiding pulling extra dependencies.
+- Added optional compiled hpack encoder and decoder in addition to the pure Python implementation.
+- Fixed tests warnings.
+- Updated version constraint for dev requirements.
+
 4.1.0 (2021-10-05)
 ------------------
 
