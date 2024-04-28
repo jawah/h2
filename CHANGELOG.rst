@@ -1,6 +1,12 @@
 Release History
 ===============
 
+5.0.1 (2024-04-28)
+------------------
+
+- Fixed a minor performance regression in ``_build_headers_frames`` method.
+- (Rust) Bump pyo3 to version 0.20.3
+
 5.0.0 (2024-04-28)
 ------------------
 

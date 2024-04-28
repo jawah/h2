@@ -1351,20 +1351,16 @@ class H2Stream:
             headers = validate_outbound_headers(headers, hdr_validation_flags)
 
         if ALTERNATIVE_HPACK:
-            buf = []
-
-            for header in headers:
-                h, v = header
-
-                if isinstance(h, str):
-                    h = h.encode()
-                if isinstance(v, str):
-                    v = v.encode()
-                is_sensitive = isinstance(header, NeverIndexedHeaderTuple)
-
-                buf.append((h, v, is_sensitive))
-
-            encoded_headers = encoder.encode(buf)
+            encoded_headers = encoder.encode(
+                [
+                    (
+                        h[0] if isinstance(h[0], bytes) else h[0].encode(),
+                        h[1] if isinstance(h[1], bytes) else h[1].encode(),
+                        isinstance(h, NeverIndexedHeaderTuple),
+                    )
+                    for h in headers
+                ]
+            )
         else:
             encoded_headers = encoder.encode(headers)
 
