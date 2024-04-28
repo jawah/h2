@@ -10,3 +10,23 @@ coverage.xml
 .hypothesis/
 .cache/
 _trial_temp/
+
+*.egg-info
+*.so
+.eggs
+.mypy_cache
+.vscode
+.idea
+bob.bin
+/build
+/dist
+/docs/_build
+
+# Environments
+.env
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+target/
