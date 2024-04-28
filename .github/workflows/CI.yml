@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
 
   lint:
@@ -96,9 +100,9 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: rm -f pyproject.toml && mv pyproject.fb.toml pyproject.toml
       - name: Use fallback pyproject.toml (NT)
-        if: matrix.os != 'windows-latest'
+        if: matrix.os == 'windows-latest'
         run: |
-          rm -Force pyproject.toml 
+          rm -Force pyproject.toml
           move pyproject.fb.toml pyproject.toml
       - run: pip install .
         name: Install built package
