@@ -1,6 +1,12 @@
 Release History
 ===============
 
+5.0.2 (2024-04-29)
+------------------
+
+- Fixed URLs in project metadata.
+- Overall performance improvement.
+
 5.0.1 (2024-04-28)
 ------------------
 

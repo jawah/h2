@@ -1577,7 +1577,7 @@ class H2Connection:
         .. versionchanged:: 2.0.0
            Removed from the public API.
         """
-        self.config.logger.trace("Received frame: %s", repr(frame))
+        # self.config.logger.trace("Received frame: %s", repr(frame))
         try:
             # I don't love using __class__ here, maybe reconsider it.
             frames, events = self._frame_dispatch_table[frame.__class__](frame)
@@ -2105,17 +2105,12 @@ def _decode_headers(decoder, encoded_header_block):
     """
     try:
         if ALTERNATIVE_HPACK:
-            headers = decoder.decode(encoded_header_block, raw=True)
-            to_named_tuple = []
-
-            for header in headers:
-                to_named_tuple.append(
-                    NeverIndexedHeaderTuple(header[0], header[1])
-                    if header[-1]
-                    else HeaderTuple(header[0], header[1])
-                )
-
-            return to_named_tuple
+            return [
+                NeverIndexedHeaderTuple(header[0], header[1])
+                if header[-1]
+                else HeaderTuple(header[0], header[1])
+                for header in decoder.decode(encoded_header_block, raw=True)
+            ]
 
         return decoder.decode(encoded_header_block, raw=True)
     except OversizedHeaderListError as e:
