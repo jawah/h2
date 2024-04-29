@@ -41,9 +41,9 @@ dynamic = ["version"]
 
 
 [project.urls]
-"Changelog" = "https://github.com/jawah/jh2/blob/main/CHANGELOG.rst"
-"Code" = "https://github.com/jawah/jh2"
-"Issue tracker" = "https://github.com/jawah/jh2/issues"
+"Changelog" = "https://github.com/jawah/h2/blob/main/CHANGELOG.rst"
+"Code" = "https://github.com/jawah/h2"
+"Issue tracker" = "https://github.com/jawah/h2/issues"
 
 [tool.hatch.version]
 path = "jh2/__init__.py"
