@@ -149,6 +149,14 @@ class Settings(MutableMapping):
                         error_code=invalid,
                     )
                 self._settings[key] = collections.deque([value])
+        self._any_update = True
+
+    @property
+    def has_update(self):
+        try:
+            return self._any_update
+        finally:
+            self._any_update = False
 
     def acknowledge(self):
         """
@@ -282,6 +290,7 @@ class Settings(MutableMapping):
             self._settings[key] = items
 
         items.append(value)
+        self._any_update = True
 
     def __delitem__(self, key):
         del self._settings[key]

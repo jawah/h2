@@ -1,6 +1,11 @@
 Release History
 ===============
 
+5.0.3 (2024-05-02)
+------------------
+
+- Added method ``has_update`` into ``Settings`` class.
+
 5.0.2 (2024-04-29)
 ------------------
 
