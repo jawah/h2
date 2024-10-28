@@ -24,7 +24,7 @@ concurrency:
 jobs:
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-13, windows-latest ]
+        os: [ubuntu-22.04, macos-13, windows-latest ]
         python_version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10']
     runs-on: ${{ matrix.os }}
     steps:
@@ -82,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-13, windows-latest ]
+        os: [ ubuntu-22.04, macos-13, windows-latest ]
         python_version: [ '3.7', '3.8', '3.9', '3.10', '3.11', '3.12', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10' ]
     runs-on: ${{ matrix.os }}
     steps:
@@ -116,7 +116,7 @@ jobs:
         name: Run tests
 
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - test
       - test_vanilla
@@ -224,7 +224,7 @@ jobs:
       - test
       - test_vanilla
       - lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -245,7 +245,7 @@ jobs:
       - test
       - test_vanilla
       - lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -265,7 +265,7 @@ jobs:
 
   checksum:
     name: compute hashes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [linux, windows, macos, sdist, universal]
     if: "startsWith(github.ref, 'refs/tags/')"
     outputs:
@@ -300,7 +300,7 @@ jobs:
 
   release:
     name: release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: provenance
     environment: pypi
