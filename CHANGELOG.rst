@@ -1,7 +1,7 @@
 Release History
 ===============
 
-5.0.4 (2024-05-28)
+5.0.4 (2024-10-28)
 ------------------
 
 - Added explicit support for Python 3.13
