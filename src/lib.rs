@@ -27,7 +27,8 @@ impl Encoder {
         }
     }
 
-    pub fn encode<'a>(&mut self, py: Python<'a>, headers: Vec<(&PyBytes, &PyBytes, bool)>, huffman: Option<bool>) -> PyResult<&'a PyBytes> {
+    #[pyo3(signature = (headers, huffman=None))]
+    pub fn encode<'a>(&mut self, py: Python<'a>, headers: Vec<(Bound<'_, PyBytes, >, Bound<'_, PyBytes, >, bool)>, huffman: Option<bool>) -> PyResult<Bound<'a, PyBytes, >> {
         let mut flags = InternalEncoder::BEST_FORMAT;
 
         if !huffman.is_some() || huffman.unwrap() {
@@ -53,14 +54,15 @@ impl Encoder {
         }
 
         return Ok(
-            PyBytes::new(
+            PyBytes::new_bound(
                 py,
                 &dst.as_slice()
             )
         );
     }
 
-    pub fn add<'a>(&mut self, py: Python<'a>, header: (&PyBytes, &PyBytes), sensitive: bool, huffman: Option<bool>) -> PyResult<&'a PyBytes> {
+    #[pyo3(signature = (header, sensitive, huffman=None))]
+    pub fn add<'a>(&mut self, py: Python<'a>, header: (Bound<'_, PyBytes, >, Bound<'_, PyBytes, >), sensitive: bool, huffman: Option<bool>) -> PyResult<Bound<'a, PyBytes, >> {
         let mut flags = InternalEncoder::BEST_FORMAT;
 
         if !huffman.is_some() || huffman.unwrap() {
@@ -82,7 +84,7 @@ impl Encoder {
         }
 
         return Ok(
-            PyBytes::new(
+            PyBytes::new_bound(
                 py,
                 &dst.as_slice()
             )
@@ -109,6 +111,8 @@ impl Encoder {
 
 #[pymethods]
 impl Decoder {
+
+    #[pyo3(signature = (max_header_list_size=None))]
     #[new]
     pub fn py_new(max_header_list_size: Option<u32>) -> Self {
         let mut max_hls: u32 = 65536;
@@ -123,7 +127,8 @@ impl Decoder {
         }
     }
 
-    pub fn decode<'a>(&mut self, py: Python<'a>, data: &PyBytes, raw: Option<bool>) -> PyResult<&'a PyList> {
+    #[pyo3(signature = (data, raw=None))]
+    pub fn decode<'a>(&mut self, py: Python<'a>, data: Bound<'_, PyBytes, >, raw: Option<bool>) -> PyResult<Bound<'a, PyList, >> {
         let mut dst = Vec::new();
         let mut buf = data.as_bytes().to_vec();
 
@@ -152,30 +157,30 @@ impl Decoder {
             }
         }
 
-        let res = PyList::empty(py);
+        let res = PyList::empty_bound(py);
 
         for (name, value, flags) in dst {
             let is_sensitive = flags & InternalDecoder::NEVER_INDEXED == InternalDecoder::NEVER_INDEXED;
 
             if !raw.is_some() || raw.unwrap() {
                 let _ = res.append(
-                    PyTuple::new(
+                    PyTuple::new_bound(
                         py,
                         [
-                            PyBytes::new(py, &name).to_object(py),
-                            PyBytes::new(py, &value).to_object(py),
-                            PyBool::new(py, is_sensitive).to_object(py),
+                            PyBytes::new_bound(py, &name).to_object(py),
+                            PyBytes::new_bound(py, &value).to_object(py),
+                            PyBool::new_bound(py, is_sensitive).to_object(py),
                         ]
                     )
                 );
             } else {
                 let _ = res.append(
-                    PyTuple::new(
+                    PyTuple::new_bound(
                         py,
                         [
-                            PyString::new(py, std::str::from_utf8(&name).unwrap()).to_object(py),
-                            PyString::new(py, std::str::from_utf8(&value).unwrap()).to_object(py),
-                            PyBool::new(py, is_sensitive).to_object(py),
+                            PyString::new_bound(py, std::str::from_utf8(&name).unwrap()).to_object(py),
+                            PyString::new_bound(py, std::str::from_utf8(&value).unwrap()).to_object(py),
+                            PyBool::new_bound(py, is_sensitive).to_object(py),
                         ]
                     )
                 );
@@ -218,9 +223,9 @@ impl Decoder {
 
 
 #[pymodule]
-fn _hazmat(py: Python, m: &PyModule) -> PyResult<()> {
-    m.add("HPACKError", py.get_type::<HPACKError>())?;
-    m.add("OversizedHeaderListError", py.get_type::<OversizedHeaderListError>())?;
+fn _hazmat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("HPACKError", py.get_type_bound::<HPACKError>())?;
+    m.add("OversizedHeaderListError", py.get_type_bound::<OversizedHeaderListError>())?;
 
     m.add_class::<Decoder>()?;
     m.add_class::<Encoder>()?;

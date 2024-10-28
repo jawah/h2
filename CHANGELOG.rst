@@ -1,6 +1,12 @@
 Release History
 ===============
 
+5.0.4 (2024-05-28)
+------------------
+
+- Added explicit support for Python 3.13
+- (Rust) pyo3 updated to 0.22.5
+
 5.0.3 (2024-05-02)
 ------------------
 
