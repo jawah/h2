@@ -203,7 +203,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          sccache: 'true'
+          sccache: 'false'
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
