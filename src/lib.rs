@@ -184,23 +184,29 @@ impl Decoder {
                 flags & InternalDecoder::NEVER_INDEXED == InternalDecoder::NEVER_INDEXED;
 
             if raw.is_none() || raw.unwrap() {
-                let _ = res.append(PyTuple::new(
-                    py,
-                    [
-                        PyBytes::new(py, &name).to_object(py),
-                        PyBytes::new(py, &value).to_object(py),
-                        PyBool::new(py, is_sensitive).to_object(py),
-                    ],
-                ).unwrap());
+                let _ = res.append(
+                    PyTuple::new(
+                        py,
+                        [
+                            PyBytes::new(py, &name).to_object(py),
+                            PyBytes::new(py, &value).to_object(py),
+                            PyBool::new(py, is_sensitive).to_object(py),
+                        ],
+                    )
+                    .unwrap(),
+                );
             } else {
-                let _ = res.append(PyTuple::new(
-                    py,
-                    [
-                        PyString::new(py, std::str::from_utf8(&name)?).to_object(py),
-                        PyString::new(py, std::str::from_utf8(&value)?).to_object(py),
-                        PyBool::new(py, is_sensitive).to_object(py),
-                    ],
-                ).unwrap());
+                let _ = res.append(
+                    PyTuple::new(
+                        py,
+                        [
+                            PyString::new(py, std::str::from_utf8(&name)?).to_object(py),
+                            PyString::new(py, std::str::from_utf8(&value)?).to_object(py),
+                            PyBool::new(py, is_sensitive).to_object(py),
+                        ],
+                    )
+                    .unwrap(),
+                );
             }
         }
 
