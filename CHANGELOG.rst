@@ -1,6 +1,13 @@
 Release History
 ===============
 
+5.0.5 (2024-12-26)
+------------------
+
+- (Rust) Updated pyo3 from 0.22.5 to 0.23.3
+- Fixed clippy warnings in our Rust code.
+- Initial support for Python 3.13 freethreaded experimental build.
+
 5.0.4 (2024-10-28)
 ------------------
 
