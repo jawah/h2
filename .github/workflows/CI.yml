@@ -61,6 +61,8 @@ jobs:
       - name: Build wheels (NT)
         if: matrix.os == 'windows-latest'
         uses: PyO3/maturin-action@v1
+        env:
+          UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           args: --release --out dist
           sccache: 'true'
