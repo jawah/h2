@@ -136,11 +136,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        if: python_version != '3.13t'
+        if: matrix.python_version != '3.13t'
         with:
           python-version: ${{ matrix.python_version }}
       - uses: Quansight-Labs/setup-python@v5
-        if: python_version == '3.13t'
+        if: matrix.python_version == '3.13t'
         with:
           python-version: 3.13t
       - name: Build wheels
@@ -184,12 +184,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        if: python_version != '3.13t'
+        if: matrix.python_version != '3.13t'
         with:
           python-version: ${{ matrix.python_version }}
           architecture: x64
       - uses: Quansight-Labs/setup-python@v5
-        if: python_version == '3.13t'
+        if: matrix.python_version == '3.13t'
         with:
           python-version: 3.13t
           architecture: x64
@@ -221,11 +221,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        if: python_version != '3.13t'
+        if: matrix.python_version != '3.13t'
         with:
           python-version: ${{ matrix.python_version }}
       - uses: Quansight-Labs/setup-python@v5
-        if: python_version == '3.13t'
+        if: matrix.python_version == '3.13t'
         with:
           python-version: 3.13t
       - name: Build wheels
