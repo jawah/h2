@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.2,<2.0"]
+requires = ["maturin>=1.7,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -46,7 +46,7 @@ dynamic = ["version"]
 "Issue tracker" = "https://github.com/jawah/h2/issues"
 
 [tool.maturin]
-features = ["pyo3/extension-module", "pyo3/abi3-py37", "pyo3/generate-import-lib"]
+features = ["pyo3/extension-module", "pyo3/abi3-py37"]
 module-name = "jh2._hazmat"
 
 [tool.isort]
