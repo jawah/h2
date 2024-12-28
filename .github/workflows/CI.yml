@@ -199,11 +199,11 @@ jobs:
         uses: PyO3/maturin-action@v1
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
-          PYO3_CROSS: ${{ matrix.target == 'aarch64' && '1' || '' }}
+          PYO3_CROSS: ${{ matrix.target == 'aarch64' && '1' || '0' }}
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          sccache: 'false'
+          sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:

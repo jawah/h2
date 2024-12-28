@@ -46,7 +46,7 @@ dynamic = ["version"]
 "Issue tracker" = "https://github.com/jawah/h2/issues"
 
 [tool.maturin]
-features = ["pyo3/extension-module", "pyo3/abi3-py37"]
+features = ["pyo3/extension-module", "pyo3/abi3-py37", "pyo3/generate-import-lib"]
 module-name = "jh2._hazmat"
 
 [tool.isort]
