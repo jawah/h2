@@ -195,11 +195,21 @@ jobs:
         with:
           python-version: 3.13t
           architecture: x64
-      - name: Build wheels
+      - name: Build wheels wo/ PYO3_CROSS
         uses: PyO3/maturin-action@v1
+        if: matrix.target != 'aarch64'
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
-          PYO3_CROSS: ${{ matrix.target == 'aarch64' && '1' || '0' }}
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          sccache: 'true'
+      - name: Build wheels w/ PYO3_CROSS
+        uses: PyO3/maturin-action@v1
+        if: matrix.target == 'aarch64'
+        env:
+          UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
+          PYO3_CROSS: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
