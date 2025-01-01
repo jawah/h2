@@ -1,7 +1,7 @@
 use httlib_hpack::{Decoder as InternalDecoder, Encoder as InternalEncoder};
 use pyo3::exceptions::PyException;
-use pyo3::types::{PyBool, PyList, PyString, PyTuple};
-use pyo3::{prelude::*, types::PyBytes};
+use pyo3::types::{PyList, PyTuple};
+use pyo3::{prelude::*, types::PyBytes, BoundObject};
 
 pyo3::create_exception!(_hazmat, HPACKError, PyException);
 pyo3::create_exception!(_hazmat, OversizedHeaderListError, PyException);
@@ -188,9 +188,19 @@ impl Decoder {
                     PyTuple::new(
                         py,
                         [
-                            PyBytes::new(py, &name).to_object(py),
-                            PyBytes::new(py, &value).to_object(py),
-                            PyBool::new(py, is_sensitive).to_object(py),
+                            PyBytes::new(py, &name)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any(),
+                            PyBytes::new(py, &value)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any(),
+                            is_sensitive
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_bound()
+                                .into_any(),
                         ],
                     )
                     .unwrap(),
@@ -200,9 +210,21 @@ impl Decoder {
                     PyTuple::new(
                         py,
                         [
-                            PyString::new(py, std::str::from_utf8(&name)?).to_object(py),
-                            PyString::new(py, std::str::from_utf8(&value)?).to_object(py),
-                            PyBool::new(py, is_sensitive).to_object(py),
+                            std::str::from_utf8(&name)
+                                .unwrap()
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any(),
+                            std::str::from_utf8(&value)
+                                .unwrap()
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any(),
+                            is_sensitive
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_bound()
+                                .into_any(),
                         ],
                     )
                     .unwrap(),
