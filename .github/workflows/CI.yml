@@ -191,28 +191,27 @@ jobs:
           python-version: ${{ matrix.python_version }}
           architecture: x64
       - uses: Quansight-Labs/setup-python@v5
-        if: matrix.python_version == '3.13t'
+        if: matrix.python_version == '3.13t' && matrix.target == 'x64'
         with:
-          python-version: 3.13t
+          python-version: '3.13t'
           architecture: x64
-      - name: Build wheels wo/ PYO3_CROSS
+      - name: Build wheels (normal)
         uses: PyO3/maturin-action@v1
-        if: matrix.target != 'aarch64'
+        if: matrix.python_version != '3.13t' || matrix.target == 'x64'
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
           sccache: 'true'
-      - name: Build wheels w/ PYO3_CROSS
+      - name: Build wheels (workaround 3.13t arm64)
         uses: PyO3/maturin-action@v1
-        if: matrix.target == 'aarch64'
+        if: matrix.python_version == '3.13t' && matrix.target == 'aarch64'
         env:
-          UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
           PYO3_CROSS: 1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist
+          args: --release --out dist -i 3.13t
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@v3
@@ -347,7 +346,7 @@ jobs:
         with:
           name: wheels
       - name: Publish to PyPI
-        uses: PyO3/maturin-action@v1.42.1
+        uses: PyO3/maturin-action@v1
         with:
           command: upload
           args: --non-interactive --skip-existing *
