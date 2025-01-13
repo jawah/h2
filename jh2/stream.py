@@ -1184,8 +1184,7 @@ class H2Stream:
         Receive some data.
         """
         self.config.logger.debug(
-            "Receive data on %r with end stream %s and flow control length "
-            "set to %d",
+            "Receive data on %r with end stream %s and flow control length set to %d",
             self,
             end_stream,
             flow_control_len,
