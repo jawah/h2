@@ -285,15 +285,10 @@ class DataReceived(Event):
         self.stream_ended = None
 
     def __repr__(self):
-        return (
-            "<DataReceived stream_id:%s, "
-            "flow_controlled_length:%s, "
-            "data:%s>"
-            % (
-                self.stream_id,
-                self.flow_controlled_length,
-                _bytes_representation(self.data[:20]),
-            )
+        return "<DataReceived stream_id:%s, flow_controlled_length:%s, data:%s>" % (
+            self.stream_id,
+            self.flow_controlled_length,
+            _bytes_representation(self.data[:20]),
         )
 
 
