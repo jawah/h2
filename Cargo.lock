@@ -52,7 +52,7 @@ checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
 
 [[package]]
 name = "jh2"
-version = "5.0.6"
+version = "5.0.7"
 dependencies = [
  "httlib-hpack",
  "pyo3",
