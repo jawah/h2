@@ -1,6 +1,11 @@
 Release History
 ===============
 
+5.0.7 (2025-01-21)
+------------------
+
+- No user facing changes. Release made to include win32/linux i686 wheel published to PyPI.
+
 5.0.6 (2025-01-13)
 ------------------
 
