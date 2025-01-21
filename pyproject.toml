@@ -13,7 +13,7 @@ authors = [
   {name = "Cory Benfield", email = "cory@lukasa.co.uk"}
 ]
 maintainers = [
-  {name = "Ahmed R. TAHRI", email="ahmed.tahri@cloudnursery.dev"},
+  {name = "Ahmed R. TAHRI", email="tahri.ahmed@proton.me"},
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
