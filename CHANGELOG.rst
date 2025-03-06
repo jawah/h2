@@ -6,6 +6,7 @@ Release History
 
 - Add PyPy 3.11 pre-built optimized build in CI/CD
 - Backported "Use bytearray() in FrameBuffer" from upstreams for improved performance
+- (rust) Upgrade pyo3 from 0.23.4 to 0.23.5
 
 5.0.7 (2025-01-21)
 ------------------
