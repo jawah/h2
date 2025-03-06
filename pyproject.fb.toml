@@ -6,8 +6,8 @@ build-backend = "hatchling.build"
 name = "jh2"
 description = "HTTP/2 State-Machine based protocol implementation"
 readme = "README.rst"
-license-files = { paths = ["LICENSE"] }
 license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["http2", "hpack", "h2"]
 authors = [
   {name = "Cory Benfield", email = "cory@lukasa.co.uk"}
