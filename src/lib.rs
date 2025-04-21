@@ -30,7 +30,7 @@ impl Encoder {
     pub fn encode<'a>(
         &mut self,
         py: Python<'a>,
-        headers: Vec<(Bound<'_, PyBytes>, Bound<'_, PyBytes>, bool)>,
+        headers: Vec<(Vec<u8>, Vec<u8>, bool)>,
         huffman: Option<bool>,
     ) -> PyResult<Bound<'a, PyBytes>> {
         let mut flags = InternalEncoder::BEST_FORMAT;
@@ -41,27 +41,34 @@ impl Encoder {
 
         let mut dst = Vec::new();
 
-        for (header, value, sensitive) in headers.iter() {
-            let mut header_flags: u8 = flags;
+        let encode_res = py.allow_threads(|| {
+            for (header, value, sensitive) in headers.iter() {
+                let mut header_flags: u8 = flags;
 
-            if *sensitive {
-                header_flags |= InternalEncoder::NEVER_INDEXED;
-            } else {
-                header_flags |= InternalEncoder::WITH_INDEXING;
+                if *sensitive {
+                    header_flags |= InternalEncoder::NEVER_INDEXED;
+                } else {
+                    header_flags |= InternalEncoder::WITH_INDEXING;
+                }
+
+                let enc_res = self.inner.encode(
+                    (
+                        header.to_vec(),
+                        value.to_vec(),
+                        header_flags,
+                    ),
+                    &mut dst,
+                );
+
+                if enc_res.is_err() {
+                    return Err(HPACKError::new_err("operation failed"));
+                }
             }
+            Ok(())
+        });
 
-            let enc_res = self.inner.encode(
-                (
-                    header.as_bytes().to_vec(),
-                    value.as_bytes().to_vec(),
-                    header_flags,
-                ),
-                &mut dst,
-            );
-
-            if enc_res.is_err() {
-                return Err(HPACKError::new_err("operation failed"));
-            }
+        if encode_res.is_err() {
+            return Err(encode_res.err().unwrap());
         }
 
         Ok(PyBytes::new(py, dst.as_slice()))
@@ -71,7 +78,7 @@ impl Encoder {
     pub fn add<'a>(
         &mut self,
         py: Python<'a>,
-        header: (Bound<'_, PyBytes>, Bound<'_, PyBytes>),
+        header: (Vec<u8>, Vec<u8>),
         sensitive: bool,
         huffman: Option<bool>,
     ) -> PyResult<Bound<'a, PyBytes>> {
@@ -89,14 +96,16 @@ impl Encoder {
 
         let mut dst = Vec::new();
 
-        let enc_res = self.inner.encode(
-            (
-                header.0.as_bytes().to_vec(),
-                header.1.as_bytes().to_vec(),
-                flags,
-            ),
-            &mut dst,
-        );
+        let enc_res = py.allow_threads(|| {
+            self.inner.encode(
+                (
+                    header.0.to_vec(),
+                    header.1.to_vec(),
+                    flags,
+                ),
+                &mut dst,
+            )
+        });
 
         if enc_res.is_err() {
             return Err(HPACKError::new_err("operation failed"));
@@ -159,7 +168,9 @@ impl Decoder {
 
             let mut data = Vec::with_capacity(1);
 
-            let dec_res = self.inner.decode_exact(&mut buf, &mut data);
+            let dec_res = py.allow_threads(|| {
+                self.inner.decode_exact(&mut buf, &mut data)
+            });
 
             if dec_res.is_err() {
                 return Err(HPACKError::new_err("operation failed"));
