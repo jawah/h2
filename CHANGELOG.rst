@@ -1,6 +1,12 @@
 Release History
 ===============
 
+5.0.9 (2025-04-21)
+------------------
+
+- Release the GIL during hpack encoding/decoding in the optimized build.
+- (rust) Upgrade pyo3 to 0.24.1
+
 5.0.8 (2025-03-06)
 ------------------
 
