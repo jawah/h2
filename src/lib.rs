@@ -51,14 +51,9 @@ impl Encoder {
                     header_flags |= InternalEncoder::WITH_INDEXING;
                 }
 
-                let enc_res = self.inner.encode(
-                    (
-                        header.to_vec(),
-                        value.to_vec(),
-                        header_flags,
-                    ),
-                    &mut dst,
-                );
+                let enc_res = self
+                    .inner
+                    .encode((header.to_vec(), value.to_vec(), header_flags), &mut dst);
 
                 if enc_res.is_err() {
                     return Err(HPACKError::new_err("operation failed"));
@@ -97,14 +92,8 @@ impl Encoder {
         let mut dst = Vec::new();
 
         let enc_res = py.allow_threads(|| {
-            self.inner.encode(
-                (
-                    header.0.to_vec(),
-                    header.1.to_vec(),
-                    flags,
-                ),
-                &mut dst,
-            )
+            self.inner
+                .encode((header.0.to_vec(), header.1.to_vec(), flags), &mut dst)
         });
 
         if enc_res.is_err() {
@@ -168,9 +157,7 @@ impl Decoder {
 
             let mut data = Vec::with_capacity(1);
 
-            let dec_res = py.allow_threads(|| {
-                self.inner.decode_exact(&mut buf, &mut data)
-            });
+            let dec_res = py.allow_threads(|| self.inner.decode_exact(&mut buf, &mut data));
 
             if dec_res.is_err() {
                 return Err(HPACKError::new_err("operation failed"));
