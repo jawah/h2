@@ -191,13 +191,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        if: matrix.target != 'aarch64'
+        if: matrix.target != 'aarch64'  # solely rely on python3-ddl generator for aarch64
         with:
           python-version: ${{ matrix.python_version }}
-          architecture: ${{ matrix.target == 'x86' && 'x86' || 'x64' }}
+          architecture: ${{ matrix.target }}
       - name: Build wheels (normal)
         uses: PyO3/maturin-action@v1
-        if: matrix.python_version != '3.13t' || matrix.target == 'x64'
+        if: matrix.python_version != '3.13t' || matrix.target != 'aarch64'
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
