@@ -41,7 +41,7 @@ impl Encoder {
 
         let mut dst = Vec::new();
 
-        let encode_res = py.allow_threads(|| {
+        let encode_res = py.detach(|| {
             for (header, value, sensitive) in headers.iter() {
                 let mut header_flags: u8 = flags;
 
@@ -91,7 +91,7 @@ impl Encoder {
 
         let mut dst = Vec::new();
 
-        let enc_res = py.allow_threads(|| {
+        let enc_res = py.detach(|| {
             self.inner
                 .encode((header.0.to_vec(), header.1.to_vec(), flags), &mut dst)
         });
@@ -128,8 +128,8 @@ impl Decoder {
     pub fn py_new(max_header_list_size: Option<u32>) -> Self {
         let mut max_hls: u32 = 65536;
 
-        if max_header_list_size.is_some() {
-            max_hls = max_header_list_size.unwrap();
+        if let Some(user_specified_max_hls) = max_header_list_size {
+            max_hls = user_specified_max_hls;
         }
 
         Decoder {
@@ -157,7 +157,7 @@ impl Decoder {
 
             let mut data = Vec::with_capacity(1);
 
-            let dec_res = py.allow_threads(|| self.inner.decode_exact(&mut buf, &mut data));
+            let dec_res = py.detach(|| self.inner.decode_exact(&mut buf, &mut data));
 
             if dec_res.is_err() {
                 return Err(HPACKError::new_err("operation failed"));
