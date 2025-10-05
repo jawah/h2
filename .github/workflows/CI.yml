@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-13, windows-latest ]
-        python_version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11']
+        python_version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -44,6 +44,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_version }}
+          allow-prereleases: true
       - name: Setup dependencies
         run: |
           pip install --upgrade pip
@@ -83,7 +84,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, macos-13, windows-latest ]
-        python_version: [ '3.7', '3.8', '3.9', '3.10', '3.11', '3.12', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11' ]
+        python_version: [ '3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11' ]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -92,6 +93,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_version }}
+          allow-prereleases: true
       - name: Setup dependencies
         run: |
           pip install --upgrade pip
@@ -125,7 +127,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x86_64, aarch64, armv7, s390x, ppc64le, ppc64, i686]
-        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t']
+        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t' , '3.14t']
         manylinux: ['auto', 'musllinux_1_1']
         exclude:
           - manylinux: musllinux_1_1
@@ -140,6 +142,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_version }}
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
@@ -166,7 +169,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x64, aarch64, x86]
-        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t']
+        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t', '3.14t']
         exclude:
           - target: aarch64
             python_version: 'pypy-3.7'
@@ -195,23 +198,24 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
           architecture: ${{ matrix.target }}
+          allow-prereleases: true
       - name: Build wheels (normal)
         uses: PyO3/maturin-action@v1
-        if: matrix.python_version != '3.13t' || matrix.target != 'aarch64'
+        if: matrix.target != 'aarch64'
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
           sccache: 'true'
-      - name: Build wheels (workaround 3.13t arm64)
+      - name: Build wheels (workaround arm64)
         uses: PyO3/maturin-action@v1
-        if: matrix.python_version == '3.13t' && matrix.target == 'aarch64'
+        if: matrix.target == 'aarch64'
         env:
           PYO3_CROSS: 1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i 3.13t
+          args: --release --out dist -i ${{ matrix.python_version }}
           sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
@@ -229,12 +233,13 @@ jobs:
       fail-fast: false
       matrix:
         target: [universal2]
-        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t']
+        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t', '3.14t']
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_version }}
+          allow-prereleases: true
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         env:
