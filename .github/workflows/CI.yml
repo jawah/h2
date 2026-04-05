@@ -21,8 +21,10 @@ jobs:
   lint:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3'
       - run: pip install pre-commit
@@ -34,14 +36,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-13, windows-latest ]
+        os: [ubuntu-22.04, macos-14, windows-latest ]
         python_version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
           submodules: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python_version }}
           allow-prereleases: true
@@ -51,22 +54,20 @@ jobs:
           pip install -r dev-requirements.txt
       - name: Build wheels (Unix, Linux)
         if: matrix.os != 'windows-latest'
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           args: --release --out dist --interpreter ${{ matrix.python_version }}
-          sccache: 'true'
           manylinux: auto
           docker-options: -e UNSAFE_PYO3_SKIP_VERSION_CHECK=1
       - name: Build wheels (NT)
         if: matrix.os == 'windows-latest'
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           args: --release --out dist
-          sccache: 'true'
           target: x64
       - run: pip install --find-links=./dist jh2
         name: Install built package
@@ -83,14 +84,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, macos-13, windows-latest ]
+        os: [ ubuntu-22.04, macos-14, windows-latest ]
         python_version: [ '3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11' ]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
           submodules: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python_version }}
           allow-prereleases: true
@@ -138,19 +140,20 @@ jobs:
             target: ppc64le
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python_version }}
           allow-prereleases: true
       - name: Build wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --interpreter ${{ matrix.python_version }}
-          sccache: 'true'
           manylinux: ${{ matrix.manylinux }}
           docker-options: -e UNSAFE_PYO3_SKIP_VERSION_CHECK=1
       - name: Upload wheels
@@ -192,31 +195,31 @@ jobs:
           - target: x86
             python_version: 'pypy-3.11'
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         if: matrix.target != 'aarch64'  # solely rely on python3-ddl generator for aarch64
         with:
           python-version: ${{ matrix.python_version }}
           architecture: ${{ matrix.target }}
           allow-prereleases: true
       - name: Build wheels (normal)
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
         if: matrix.target != 'aarch64'
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          sccache: 'true'
       - name: Build wheels (workaround arm64)
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
         if: matrix.target == 'aarch64'
         env:
           PYO3_CROSS: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist -i ${{ matrix.python_version }}
-          sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
@@ -228,26 +231,27 @@ jobs:
       - test
       - test_vanilla
       - lint
-    runs-on: macos-13
+    runs-on: macos-14
     strategy:
       fail-fast: false
       matrix:
         target: [universal2]
         python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t', '3.14t']
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python_version }}
           allow-prereleases: true
       - name: Build wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --interpreter ${{ matrix.python_version }}
-          sccache: 'true'
       - name: Upload wheels
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
         with:
@@ -261,11 +265,12 @@ jobs:
       - lint
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
           submodules: true
       - name: Build sdist
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
         with:
           command: sdist
           args: --out dist
@@ -282,8 +287,10 @@ jobs:
       - lint
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3'
       - name: Install dependencies
@@ -305,7 +312,9 @@ jobs:
     outputs:
       hashes: ${{ steps.compute.outputs.hashes }}
     steps:
-      - uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493 # v4.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
       - name: Download distributions
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
@@ -323,7 +332,7 @@ jobs:
   provenance:
     needs: checksum
     if: "startsWith(github.ref, 'refs/tags/')"
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a  # v2.1.0
     permissions:
       actions: read
       id-token: write
@@ -352,8 +361,10 @@ jobs:
       - name: "Upload dists to GitHub Release"
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          gh release upload ${{ github.ref_name }} dist/* --repo ${{ github.repository }}
+          gh release upload "$REF_NAME" dist/* --repo "$REPOSITORY"
       - name: Publish to PyPI
         uses: "pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e" # v1.13.0
         with:
