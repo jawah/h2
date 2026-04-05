@@ -1,6 +1,13 @@
 Release History
 ===============
 
+5.0.11 (2026-04-05)
+------------------
+
+- Fixed edge-case "rust panic" when receiving malformed (ie. invalid utf-8 header values).
+- Fixed performance issue when acquiring/releasing the GIL multiple times when decoding headers.
+- (rust) Upgraded pyo3 to 0.28.2.
+
 5.0.10 (2025-10-05)
 ------------------
 
