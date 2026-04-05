@@ -9,6 +9,7 @@ pyo3::create_exception!(_hazmat, OversizedHeaderListError, PyException);
 #[pyclass(module = "jh2._hazmat")]
 pub struct Encoder {
     inner: InternalEncoder<'static>,
+    pending_table_size_update: Vec<u8>,
 }
 
 #[pyclass(module = "jh2._hazmat")]
@@ -23,6 +24,7 @@ impl Encoder {
     pub fn py_new() -> Self {
         Encoder {
             inner: InternalEncoder::with_dynamic_size(4096),
+            pending_table_size_update: Vec::new(),
         }
     }
 
@@ -35,14 +37,15 @@ impl Encoder {
     ) -> PyResult<Bound<'a, PyBytes>> {
         let mut flags = InternalEncoder::BEST_FORMAT;
 
-        if huffman.is_none() || huffman.unwrap() {
+        if huffman.unwrap_or(true) {
             flags |= InternalEncoder::HUFFMAN_VALUE;
         }
 
-        let mut dst = Vec::new();
+        // Prepend any pending table size update signal
+        let mut dst = std::mem::take(&mut self.pending_table_size_update);
 
-        let encode_res = py.detach(|| {
-            for (header, value, sensitive) in headers.iter() {
+        py.detach(|| -> PyResult<()> {
+            for (header, value, sensitive) in &headers {
                 let mut header_flags: u8 = flags;
 
                 if *sensitive {
@@ -51,20 +54,12 @@ impl Encoder {
                     header_flags |= InternalEncoder::WITH_INDEXING;
                 }
 
-                let enc_res = self
-                    .inner
-                    .encode((header.to_vec(), value.to_vec(), header_flags), &mut dst);
-
-                if enc_res.is_err() {
-                    return Err(HPACKError::new_err("operation failed"));
-                }
+                self.inner
+                    .encode((header.clone(), value.clone(), header_flags), &mut dst)
+                    .map_err(|_| HPACKError::new_err("operation failed"))?;
             }
             Ok(())
-        });
-
-        if encode_res.is_err() {
-            return Err(encode_res.err().unwrap());
-        }
+        })?;
 
         Ok(PyBytes::new(py, dst.as_slice()))
     }
@@ -79,7 +74,7 @@ impl Encoder {
     ) -> PyResult<Bound<'a, PyBytes>> {
         let mut flags = InternalEncoder::BEST_FORMAT;
 
-        if huffman.is_none() || huffman.unwrap() {
+        if huffman.unwrap_or(true) {
             flags |= InternalEncoder::HUFFMAN_VALUE;
         }
 
@@ -91,14 +86,11 @@ impl Encoder {
 
         let mut dst = Vec::new();
 
-        let enc_res = py.detach(|| {
+        py.detach(|| {
             self.inner
-                .encode((header.0.to_vec(), header.1.to_vec(), flags), &mut dst)
-        });
-
-        if enc_res.is_err() {
-            return Err(HPACKError::new_err("operation failed"));
-        }
+                .encode((header.0.clone(), header.1.clone(), flags), &mut dst)
+                .map_err(|_| HPACKError::new_err("operation failed"))
+        })?;
 
         Ok(PyBytes::new(py, dst.as_slice()))
     }
@@ -110,14 +102,9 @@ impl Encoder {
 
     #[setter]
     pub fn set_header_table_size(&mut self, value: u32) -> PyResult<()> {
-        let mut out = Vec::new();
-        let res = self.inner.update_max_dynamic_size(value, &mut out);
-
-        if res.is_err() {
-            return Err(HPACKError::new_err("invalid header table size set"));
-        }
-
-        Ok(())
+        self.inner
+            .update_max_dynamic_size(value, &mut self.pending_table_size_update)
+            .map_err(|_| HPACKError::new_err("invalid header table size set"))
     }
 }
 
@@ -126,15 +113,9 @@ impl Decoder {
     #[pyo3(signature = (max_header_list_size=None))]
     #[new]
     pub fn py_new(max_header_list_size: Option<u32>) -> Self {
-        let mut max_hls: u32 = 65536;
-
-        if let Some(user_specified_max_hls) = max_header_list_size {
-            max_hls = user_specified_max_hls;
-        }
-
         Decoder {
             inner: InternalDecoder::with_dynamic_size(4096),
-            max_header_list_size: max_hls,
+            max_header_list_size: max_header_list_size.unwrap_or(65536),
         }
     }
 
@@ -147,87 +128,68 @@ impl Decoder {
     ) -> PyResult<Bound<'a, PyList>> {
         let mut dst = Vec::new();
         let mut buf = data.as_bytes().to_vec();
+        let max_header_list_size = self.max_header_list_size as usize;
 
-        let mut total_mem = 0;
+        // Decode all headers in a single GIL-release block
+        let decode_result: PyResult<()> = py.detach(|| {
+            let mut total_mem: usize = 0;
 
-        loop {
-            if buf.is_empty() {
-                break;
-            }
+            while !buf.is_empty() {
+                let mut data = Vec::with_capacity(1);
 
-            let mut data = Vec::with_capacity(1);
+                self.inner
+                    .decode_exact(&mut buf, &mut data)
+                    .map_err(|_| HPACKError::new_err("operation failed"))?;
 
-            let dec_res = py.detach(|| self.inner.decode_exact(&mut buf, &mut data));
+                if !data.is_empty() {
+                    total_mem += data[0].0.len() + data[0].1.len();
+                    dst.append(&mut data);
 
-            if dec_res.is_err() {
-                return Err(HPACKError::new_err("operation failed"));
-            }
-
-            if !data.is_empty() {
-                total_mem += data[0].0.len() + data[0].1.len();
-                dst.append(&mut data);
-
-                if total_mem as u32 >= self.max_header_list_size {
-                    return Err(OversizedHeaderListError::new_err(
-                        "attempt to DDoS hpack decoder detected",
-                    ));
+                    if total_mem >= max_header_list_size {
+                        return Err(OversizedHeaderListError::new_err(
+                            "attempt to DDoS hpack decoder detected",
+                        ));
+                    }
                 }
             }
-        }
+            Ok(())
+        });
+        decode_result?;
 
+        // Build the Python list from decoded headers (requires GIL)
         let res = PyList::empty(py);
+        let return_raw = raw.unwrap_or(true);
 
         for (name, value, flags) in dst {
             let is_sensitive =
                 flags & InternalDecoder::NEVER_INDEXED == InternalDecoder::NEVER_INDEXED;
 
-            if raw.is_none() || raw.unwrap() {
-                let _ = res.append(
-                    PyTuple::new(
-                        py,
-                        [
-                            PyBytes::new(py, &name)
-                                .into_pyobject(py)
-                                .unwrap()
-                                .into_any(),
-                            PyBytes::new(py, &value)
-                                .into_pyobject(py)
-                                .unwrap()
-                                .into_any(),
-                            is_sensitive
-                                .into_pyobject(py)
-                                .unwrap()
-                                .into_bound()
-                                .into_any(),
-                        ],
-                    )
-                    .unwrap(),
-                );
+            let tuple = if return_raw {
+                PyTuple::new(
+                    py,
+                    [
+                        PyBytes::new(py, &name).into_pyobject(py)?.into_any(),
+                        PyBytes::new(py, &value).into_pyobject(py)?.into_any(),
+                        is_sensitive.into_pyobject(py)?.into_bound().into_any(),
+                    ],
+                )?
             } else {
-                let _ = res.append(
-                    PyTuple::new(
-                        py,
-                        [
-                            std::str::from_utf8(&name)
-                                .unwrap()
-                                .into_pyobject(py)
-                                .unwrap()
-                                .into_any(),
-                            std::str::from_utf8(&value)
-                                .unwrap()
-                                .into_pyobject(py)
-                                .unwrap()
-                                .into_any(),
-                            is_sensitive
-                                .into_pyobject(py)
-                                .unwrap()
-                                .into_bound()
-                                .into_any(),
-                        ],
-                    )
-                    .unwrap(),
-                );
-            }
+                let name_str = std::str::from_utf8(&name)
+                    .map_err(|_| HPACKError::new_err("header name is not valid UTF-8"))?;
+                let value_str = std::str::from_utf8(&value)
+                    .map_err(|_| HPACKError::new_err("header value is not valid UTF-8"))?;
+
+                PyTuple::new(
+                    py,
+                    [
+                        name_str.into_pyobject(py)?.into_any(),
+                        value_str.into_pyobject(py)?.into_any(),
+                        is_sensitive.into_pyobject(py)?.into_bound().into_any(),
+                    ],
+                )?
+            };
+
+            res.append(tuple)?;
         }
 
         Ok(res)
