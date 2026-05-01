@@ -175,7 +175,7 @@ jobs:
           manylinux: ${{ matrix.manylinux }}
           docker-options: -e UNSAFE_PYO3_SKIP_VERSION_CHECK=1
       - name: Upload wheels
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wheels-linux-${{ matrix.manylinux }}-${{ matrix.target }}-${{ matrix.python_version }}
           path: dist/*.whl
@@ -218,7 +218,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist -i ${{ matrix.python_version }}
       - name: Upload wheels
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wheels-windows-${{ matrix.target }}-${{ matrix.python_version }}
           path: dist/*.whl
@@ -253,7 +253,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --interpreter ${{ matrix.python_version }}
       - name: Upload wheels
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wheels-macos-${{ matrix.target }}-${{ matrix.python_version }}
           path: dist/*.whl
@@ -275,7 +275,7 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wheels-sdist
           path: dist/*.tar.gz
@@ -300,7 +300,7 @@ jobs:
       - name: Build fallback wheel
         run: python -m build
       - name: Upload sdist
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wheels-universal
           path: dist/*.whl
