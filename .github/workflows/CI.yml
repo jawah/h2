@@ -208,7 +208,7 @@ jobs:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist
+          args: --release --out dist -i ${{ matrix.python_version }}
       - name: Build wheels (workaround arm64)
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         if: matrix.target == 'aarch64'
