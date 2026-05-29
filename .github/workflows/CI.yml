@@ -67,7 +67,7 @@ jobs:
           pip install -r dev-requirements.txt
       - name: Build wheels (Unix, Linux)
         if: matrix.os != 'windows-latest'
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
@@ -76,7 +76,7 @@ jobs:
           docker-options: -e UNSAFE_PYO3_SKIP_VERSION_CHECK=1
       - name: Build wheels (NT)
         if: matrix.os == 'windows-latest'
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
@@ -166,7 +166,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
           allow-prereleases: true
       - name: Build wheels
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
@@ -202,7 +202,7 @@ jobs:
           architecture: ${{ matrix.target }}
           allow-prereleases: true
       - name: Build wheels (normal)
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         if: matrix.target != 'aarch64'
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
@@ -210,7 +210,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist
       - name: Build wheels (workaround arm64)
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         if: matrix.target == 'aarch64'
         env:
           PYO3_CROSS: 1
@@ -246,7 +246,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
           allow-prereleases: true
       - name: Build wheels
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
@@ -270,7 +270,7 @@ jobs:
           persist-credentials: false
           submodules: true
       - name: Build sdist
-        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad  # v1.50.1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         with:
           command: sdist
           args: --out dist
