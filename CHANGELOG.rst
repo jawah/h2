@@ -1,6 +1,22 @@
 Release History
 ===============
 
+5.0.12 (2026-05-29)
+------------------
+
+- Fixed RFC conformance (7540 6.9.2) mandates that the connection-level flow-control window always starts at 65535 octets,
+  regardless of what SETTINGS_INITIAL_WINDOW_SIZE advertises.
+- Omitted MAX_FRAME_SIZE and ENABLE_CONNECT_PROTOCOL from the default settings
+  preface; both RFC implicit defaults (16384, 0) still apply via property
+  getters.
+- Changed default settings: HEADER_TABLE_SIZE -> 4096 to 65536; INITIAL_WINDOW_SIZE = 65535 to 6291456 and MAX_HEADER_LIST_SIZE = unset to 262144.
+- Fixed HPACK decoder cap not being initialized from local_settings.
+  HEADER_TABLE_SIZE at construction time; Settings.acknowledge() only emits
+  events for changed values, so defaults never propagated and the decoder
+  stayed at 4096, rejecting legitimate header blocks once HEADER_TABLE_SIZE
+  was raised.
+- (rust) Improved HPACK error reporting: replaced generic "operation failed" messages with formatted upstream error variants for diagnosability.
+
 5.0.11 (2026-04-05)
 ------------------
 
