@@ -134,11 +134,10 @@ class Settings(MutableMapping):
         #
         # This contains the default values for HTTP/2.
         self._settings = {
-            SettingCodes.HEADER_TABLE_SIZE: collections.deque([4096]),
+            SettingCodes.HEADER_TABLE_SIZE: collections.deque([65536]),
             SettingCodes.ENABLE_PUSH: collections.deque([int(client)]),
-            SettingCodes.INITIAL_WINDOW_SIZE: collections.deque([65535]),
-            SettingCodes.MAX_FRAME_SIZE: collections.deque([16384]),
-            SettingCodes.ENABLE_CONNECT_PROTOCOL: collections.deque([0]),
+            SettingCodes.INITIAL_WINDOW_SIZE: collections.deque([6291456]),
+            SettingCodes.MAX_HEADER_LIST_SIZE: collections.deque([262144]),
         }
         if initial_values is not None:
             for key, value in initial_values.items():
@@ -220,7 +219,8 @@ class Settings(MutableMapping):
         The current value of the :data:`MAX_FRAME_SIZE
         <h2.settings.SettingCodes.MAX_FRAME_SIZE>` setting.
         """
-        return self[SettingCodes.MAX_FRAME_SIZE]
+        # Default RFC value, we can omit it in settings preface!
+        return self.get(SettingCodes.MAX_FRAME_SIZE, 16384)
 
     @max_frame_size.setter
     def max_frame_size(self, value):
@@ -259,7 +259,7 @@ class Settings(MutableMapping):
         The current value of the :data:`ENABLE_CONNECT_PROTOCOL
         <h2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL>` setting.
         """
-        return self[SettingCodes.ENABLE_CONNECT_PROTOCOL]
+        return self.get(SettingCodes.ENABLE_CONNECT_PROTOCOL, 0)
 
     @enable_connect_protocol.setter
     def enable_connect_protocol(self, value):

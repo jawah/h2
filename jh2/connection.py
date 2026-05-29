@@ -461,9 +461,29 @@ class H2Connection:
         )
         self.remote_settings = Settings(client=not self.config.client_side)
 
-        # The current value of the connection flow control windows on the
-        # connection.
-        self.outbound_flow_control_window = self.remote_settings.initial_window_size
+        # Propagate the initial (default) local HEADER_TABLE_SIZE to the
+        # decoder's hard limit. Settings that match RFC 7540 defaults are not
+        # surfaced through ``Settings.acknowledge`` (their deque holds a single
+        # entry), so without this the decoder's hard limit would stay at the
+        # codec's construction default (4096) while we advertise something
+        # larger to the peer. The peer's resulting Dynamic Table Size Update
+        # would then be rejected with ``InvalidMaxDynamicSize``.
+        #
+        # The encoder side is deliberately not touched here: its table size is
+        # bounded by what the *remote* advertises, and the RFC default until
+        # the remote sends SETTINGS is 4096. It will be raised on demand from
+        # ``_receive_settings_frame``.
+        self.decoder.max_allowed_table_size = self.local_settings.header_table_size
+
+        # The current value of the connection flow control window for data we
+        # can send to the peer.
+        #
+        # RFC 7540 §6.9.2: ``SETTINGS_INITIAL_WINDOW_SIZE`` does **not**
+        # affect the connection-level flow-control window. The peer's
+        # connection window always starts at 65535 octets regardless of what
+        # they advertise via ``INITIAL_WINDOW_SIZE`` and can only be grown by
+        # them via ``WINDOW_UPDATE`` frames on stream 0.
+        self.outbound_flow_control_window = 65535
 
         #: The maximum size of a frame that can be emitted by this peer, in
         #: bytes.
@@ -492,9 +512,17 @@ class H2Connection:
         self._closed_streams = SizeLimitDict(size_limit=self.MAX_CLOSED_STREAMS)
 
         # The flow control window manager for the connection.
-        self._inbound_flow_control_window_manager = WindowManager(
-            max_window_size=self.local_settings.initial_window_size
-        )
+        #
+        # RFC 7540 6.9.2: ``SETTINGS_INITIAL_WINDOW_SIZE`` does not
+        # affect the connection-level flow-control window. The connection
+        # window always starts at the protocol default of 65535 octets and
+        # can only be grown via ``WINDOW_UPDATE`` frames on stream 0. Using
+        # ``local_settings.initial_window_size`` here desyncs our view from
+        # the peer's, which on a large advertised window causes the
+        # auto-update algorithm to emit oversized increments that the peer
+        # eventually rejects with ``FLOW_CONTROL_ERROR`` ("May not increment
+        # flow control window past 2147483647").
+        self._inbound_flow_control_window_manager = WindowManager(max_window_size=65535)
 
         # When in doubt use dict-dispatch.
         self._frame_dispatch_table = {

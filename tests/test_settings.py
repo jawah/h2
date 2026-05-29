@@ -27,11 +27,10 @@ class TestSettings(object):
         """
         s = jh2.settings.Settings(client=True)
 
-        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 4096
+        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 65536
         assert s[jh2.settings.SettingCodes.ENABLE_PUSH] == 1
-        assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 65535
-        assert s[jh2.settings.SettingCodes.MAX_FRAME_SIZE] == 16384
-        assert s[jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL] == 0
+        assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 6291456
+        assert s[jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE] == 262144
 
     def test_settings_defaults_server(self):
         """
@@ -39,11 +38,10 @@ class TestSettings(object):
         """
         s = jh2.settings.Settings(client=False)
 
-        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 4096
+        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 65536
         assert s[jh2.settings.SettingCodes.ENABLE_PUSH] == 0
-        assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 65535
-        assert s[jh2.settings.SettingCodes.MAX_FRAME_SIZE] == 16384
-        assert s[jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL] == 0
+        assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 6291456
+        assert s[jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE] == 262144
 
     @pytest.mark.parametrize('client', [True, False])
     def test_can_set_initial_values(self, client):
@@ -62,7 +60,7 @@ class TestSettings(object):
 
         assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 8080
         assert s[jh2.settings.SettingCodes.ENABLE_PUSH] == bool(client)
-        assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 65535
+        assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 6291456
         assert s[jh2.settings.SettingCodes.MAX_FRAME_SIZE] == 16388
         assert s[jh2.settings.SettingCodes.MAX_CONCURRENT_STREAMS] == 100
         assert s[jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE] == 2**16
@@ -99,7 +97,7 @@ class TestSettings(object):
         s = jh2.settings.Settings(client=True)
         s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 8000
 
-        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 4096
+        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 65536
 
     def test_acknowledging_values(self):
         """
@@ -112,14 +110,15 @@ class TestSettings(object):
             jh2.settings.SettingCodes.HEADER_TABLE_SIZE: 4000,
             jh2.settings.SettingCodes.ENABLE_PUSH: 0,
             jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 60,
-            jh2.settings.SettingCodes.MAX_FRAME_SIZE: 16385,
-            jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL: 1,
+            jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE: 1024,
         }
         s.update(new_settings)
 
         assert dict(s) == old_settings
         s.acknowledge()
-        assert dict(s) == new_settings
+        # ``new_settings`` only overrode keys already present in defaults
+        expected = {**old_settings, **new_settings}
+        assert dict(s) == expected
 
     def test_acknowledging_returns_the_changed_settings(self):
         """
@@ -140,7 +139,7 @@ class TestSettings(object):
         assert table_size_change.setting == (
             jh2.settings.SettingCodes.HEADER_TABLE_SIZE
         )
-        assert table_size_change.original_value == 4096
+        assert table_size_change.original_value == 65536
         assert table_size_change.new_value == 8000
 
         assert push_change.setting == jh2.settings.SettingCodes.ENABLE_PUSH
@@ -177,16 +176,16 @@ class TestSettings(object):
         Length is related only to the number of keys.
         """
         s = jh2.settings.Settings(client=True)
-        assert len(s) == 5
+        assert len(s) == 4
 
         s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 8000
-        assert len(s) == 5
+        assert len(s) == 4
 
         s.acknowledge()
-        assert len(s) == 5
+        assert len(s) == 4
 
         del s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE]
-        assert len(s) == 4
+        assert len(s) == 3
 
     def test_new_values_work(self):
         """
@@ -219,10 +218,10 @@ class TestSettings(object):
         When acknowledged, unchanged settings remain unchanged.
         """
         s = jh2.settings.Settings(client=True)
-        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 4096
+        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 65536
 
         s.acknowledge()
-        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 4096
+        assert s[jh2.settings.SettingCodes.HEADER_TABLE_SIZE] == 65536
 
     def test_settings_getters(self):
         """
@@ -237,12 +236,19 @@ class TestSettings(object):
         assert s.initial_window_size == (
             s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE]
         )
-        assert s.max_frame_size == s[jh2.settings.SettingCodes.MAX_FRAME_SIZE]
+        # MAX_FRAME_SIZE is no longer part of the default preface; the
+        # property falls back to the RFC 7540 default.
+        assert s.max_frame_size == 16384
+        assert jh2.settings.SettingCodes.MAX_FRAME_SIZE not in s
         assert s.max_concurrent_streams == 2**32 + 1  # A sensible default.
-        assert s.max_header_list_size is None
-        assert s.enable_connect_protocol == s[
-            jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL
-        ]
+        assert s.max_header_list_size == (
+            s[jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE]
+        )
+        # ENABLE_CONNECT_PROTOCOL is no longer part of the default preface;
+        # the getter returns the RFC default of 0 until the peer advertises
+        # otherwise.
+        assert jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL not in s
+        assert s.enable_connect_protocol == 0
 
     def test_settings_setters(self):
         """
@@ -309,7 +315,7 @@ class TestSettings(object):
             assert (
                 e.value.error_code == jh2.errors.ErrorCodes.FLOW_CONTROL_ERROR
             )
-            assert s.initial_window_size == 65535
+            assert s.initial_window_size == 6291456
 
             with pytest.raises(jh2.exceptions.InvalidSettingsValueError) as e:
                 s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] = val
@@ -318,7 +324,7 @@ class TestSettings(object):
             assert (
                 e.value.error_code == jh2.errors.ErrorCodes.FLOW_CONTROL_ERROR
             )
-            assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 65535
+            assert s[jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE] == 6291456
 
     @given(integers())
     def test_cannot_set_invalid_values_for_max_frame_size(self, val):
@@ -344,14 +350,18 @@ class TestSettings(object):
 
             s.acknowledge()
             assert e.value.error_code == jh2.errors.ErrorCodes.PROTOCOL_ERROR
-            assert s[jh2.settings.SettingCodes.MAX_FRAME_SIZE] == 16384
+            # MAX_FRAME_SIZE is not part of the default preface; the raw key
+            # remains absent after a rejected set.
+            assert jh2.settings.SettingCodes.MAX_FRAME_SIZE not in s
+            assert s.max_frame_size == 16384
 
     @given(integers())
     def test_cannot_set_invalid_values_for_max_header_list_size(self, val):
         """
         SETTINGS_MAX_HEADER_LIST_SIZE only allows non-negative values.
         """
-        s = jh2.settings.Settings()
+        s = jh2.settings.Settings(client=True)
+        default = s.max_header_list_size
 
         if val >= 0:
             s.max_header_list_size = val
@@ -363,16 +373,14 @@ class TestSettings(object):
 
             s.acknowledge()
             assert e.value.error_code == jh2.errors.ErrorCodes.PROTOCOL_ERROR
-            assert s.max_header_list_size is None
+            assert s.max_header_list_size == default
 
             with pytest.raises(jh2.exceptions.InvalidSettingsValueError) as e:
                 s[jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE] = val
 
             s.acknowledge()
             assert e.value.error_code == jh2.errors.ErrorCodes.PROTOCOL_ERROR
-
-            with pytest.raises(KeyError):
-                s[jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE]
+            assert s[jh2.settings.SettingCodes.MAX_HEADER_LIST_SIZE] == default
 
     @given(integers())
     def test_cannot_set_invalid_values_for_enable_connect_protocol(self, val):
@@ -387,14 +395,16 @@ class TestSettings(object):
 
         s.acknowledge()
         assert e.value.error_code == jh2.errors.ErrorCodes.PROTOCOL_ERROR
-        assert s.enable_connect_protocol == 0
+        # ENABLE_CONNECT_PROTOCOL is not part of the default preface; the key
+        # remains absent after a rejected set.
+        assert jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL not in s
 
         with pytest.raises(jh2.exceptions.InvalidSettingsValueError) as e:
             s[jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL] = val
 
         s.acknowledge()
         assert e.value.error_code == jh2.errors.ErrorCodes.PROTOCOL_ERROR
-        assert s[jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL] == 0
+        assert jh2.settings.SettingCodes.ENABLE_CONNECT_PROTOCOL not in s
 
 
 class TestSettingsEquality(object):

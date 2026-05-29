@@ -80,7 +80,7 @@ jobs:
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
-          args: --release --out dist
+          args: --release --out dist --interpreter ${{ matrix.python_version }}
           target: x64
       - run: pip install --find-links=./dist jh2
         name: Install built package

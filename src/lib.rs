@@ -56,7 +56,7 @@ impl Encoder {
 
                 self.inner
                     .encode((header.clone(), value.clone(), header_flags), &mut dst)
-                    .map_err(|_| HPACKError::new_err("operation failed"))?;
+                    .map_err(|e| HPACKError::new_err(format!("encoder failure: {e:?}")))?;
             }
             Ok(())
         })?;
@@ -89,7 +89,7 @@ impl Encoder {
         py.detach(|| {
             self.inner
                 .encode((header.0.clone(), header.1.clone(), flags), &mut dst)
-                .map_err(|_| HPACKError::new_err("operation failed"))
+                .map_err(|e| HPACKError::new_err(format!("encoder failure: {e:?}")))
         })?;
 
         Ok(PyBytes::new(py, dst.as_slice()))
@@ -104,7 +104,7 @@ impl Encoder {
     pub fn set_header_table_size(&mut self, value: u32) -> PyResult<()> {
         self.inner
             .update_max_dynamic_size(value, &mut self.pending_table_size_update)
-            .map_err(|_| HPACKError::new_err("invalid header table size set"))
+            .map_err(|e| HPACKError::new_err(format!("invalid header table size set: {e:?}")))
     }
 }
 
@@ -139,7 +139,7 @@ impl Decoder {
 
                 self.inner
                     .decode_exact(&mut buf, &mut data)
-                    .map_err(|_| HPACKError::new_err("operation failed"))?;
+                    .map_err(|e| HPACKError::new_err(format!("decoder failure: {e:?}")))?;
 
                 if !data.is_empty() {
                     total_mem += data[0].0.len() + data[0].1.len();
@@ -205,6 +205,7 @@ impl Decoder {
         self.inner.set_max_dynamic_size(value);
     }
 
+    // httlib_hpack does not expose the dynamic table current size
     #[getter]
     pub fn get_max_allowed_table_size(&self) -> u32 {
         self.inner.max_dynamic_size()

@@ -30,7 +30,13 @@ class TestFlowControl(object):
     ]
     server_config = jh2.config.H2Configuration(client_side=False)
 
-    DEFAULT_FLOW_WINDOW = 65535
+    # The default per-stream flow control window, dictated by our local
+    # ``SETTINGS_INITIAL_WINDOW_SIZE`` default.
+    DEFAULT_FLOW_WINDOW = 6291456
+    # Per RFC 7540 §6.9.2 the connection-level flow control window always
+    # starts at 65535 octets regardless of ``INITIAL_WINDOW_SIZE``; the
+    # connection window is therefore the bottleneck on a fresh connection.
+    DEFAULT_CONN_FLOW_WINDOW = 65535
 
     def test_flow_control_initializes_properly(self):
         """
@@ -40,8 +46,8 @@ class TestFlowControl(object):
         c = jh2.connection.H2Connection()
         c.send_headers(1, self.example_request_headers)
 
-        assert c.local_flow_control_window(1) == self.DEFAULT_FLOW_WINDOW
-        assert c.remote_flow_control_window(1) == self.DEFAULT_FLOW_WINDOW
+        assert c.local_flow_control_window(1) == self.DEFAULT_CONN_FLOW_WINDOW
+        assert c.remote_flow_control_window(1) == self.DEFAULT_CONN_FLOW_WINDOW
 
     def test_flow_control_decreases_with_sent_data(self):
         """
@@ -51,7 +57,7 @@ class TestFlowControl(object):
         c.send_headers(1, self.example_request_headers)
         c.send_data(1, b'some data')
 
-        remaining_length = self.DEFAULT_FLOW_WINDOW - len(b'some data')
+        remaining_length = self.DEFAULT_CONN_FLOW_WINDOW - len(b'some data')
         assert (c.local_flow_control_window(1) == remaining_length)
 
     @pytest.mark.parametrize("pad_length", [5, 0])
@@ -67,7 +73,7 @@ class TestFlowControl(object):
 
         c.send_data(1, b'some data', pad_length=pad_length)
         remaining_length = (
-            self.DEFAULT_FLOW_WINDOW - len(b'some data') - pad_length - 1
+            self.DEFAULT_CONN_FLOW_WINDOW - len(b'some data') - pad_length - 1
         )
         assert c.local_flow_control_window(1) == remaining_length
 
@@ -83,7 +89,7 @@ class TestFlowControl(object):
 
         c.receive_data(f1.serialize() + f2.serialize())
 
-        remaining_length = self.DEFAULT_FLOW_WINDOW - len(b'some data')
+        remaining_length = self.DEFAULT_CONN_FLOW_WINDOW - len(b'some data')
         assert (c.remote_flow_control_window(1) == remaining_length)
 
     def test_flow_control_decreases_with_padded_data(self, frame_factory):
@@ -99,7 +105,7 @@ class TestFlowControl(object):
         c.receive_data(f1.serialize() + f2.serialize())
 
         remaining_length = (
-            self.DEFAULT_FLOW_WINDOW - len(b'some data') - 10 - 1
+            self.DEFAULT_CONN_FLOW_WINDOW - len(b'some data') - 10 - 1
         )
         assert (c.remote_flow_control_window(1) == remaining_length)
 
@@ -113,7 +119,7 @@ class TestFlowControl(object):
         c.send_data(1, b'some data')
         c.send_headers(3, self.example_request_headers)
 
-        remaining_length = self.DEFAULT_FLOW_WINDOW - len(b'some data')
+        remaining_length = self.DEFAULT_CONN_FLOW_WINDOW - len(b'some data')
         assert (c.local_flow_control_window(3) == remaining_length)
 
     def test_remote_flow_control_is_limited_by_connection(self, frame_factory):
@@ -131,7 +137,7 @@ class TestFlowControl(object):
         )
         c.receive_data(f1.serialize() + f2.serialize() + f3.serialize())
 
-        remaining_length = self.DEFAULT_FLOW_WINDOW - len(b'some data')
+        remaining_length = self.DEFAULT_CONN_FLOW_WINDOW - len(b'some data')
         assert (c.remote_flow_control_window(3) == remaining_length)
 
     def test_cannot_send_more_data_than_window(self):
@@ -198,7 +204,8 @@ class TestFlowControl(object):
         c = jh2.connection.H2Connection()
         c.send_headers(1, self.example_request_headers)
 
-        assert c.local_flow_control_window(1) == 65535
+        # The conn window is the bottleneck here, per RFC 7540 §6.9.2.
+        assert c.local_flow_control_window(1) == self.DEFAULT_CONN_FLOW_WINDOW
 
         f = frame_factory.build_settings_frame(
             settings={jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 1280}
@@ -215,22 +222,24 @@ class TestFlowControl(object):
         c = jh2.connection.H2Connection()
         c.send_headers(1, self.example_request_headers)
 
-        # Greatly increase the connection flow control window.
+        # Greatly increase the connection flow control window so that the
+        # per-stream window becomes the bottleneck throughout the test.
         f = frame_factory.build_window_update_frame(
-            stream_id=0, increment=128000
+            stream_id=0, increment=12_000_000
         )
         c.receive_data(f.serialize())
 
         # The stream flow control window is the bottleneck here.
-        assert c.local_flow_control_window(1) == 65535
+        assert c.local_flow_control_window(1) == self.DEFAULT_FLOW_WINDOW
 
         f = frame_factory.build_settings_frame(
-            settings={jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 128000}
+            settings={jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE:
+                          8_000_000}
         )
         c.receive_data(f.serialize())
 
-        # The stream window is still the bottleneck, but larger now.
-        assert c.local_flow_control_window(1) == 128000
+        # The stream window grew; conn window is still larger.
+        assert c.local_flow_control_window(1) == 8_000_000
 
     def test_flow_control_settings_blocked_by_conn_window(self, frame_factory):
         """
@@ -240,14 +249,14 @@ class TestFlowControl(object):
         c = jh2.connection.H2Connection()
         c.send_headers(1, self.example_request_headers)
 
-        assert c.local_flow_control_window(1) == 65535
+        assert c.local_flow_control_window(1) == self.DEFAULT_CONN_FLOW_WINDOW
 
         f = frame_factory.build_settings_frame(
-            settings={jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 128000}
+            settings={jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 12000000}
         )
         c.receive_data(f.serialize())
 
-        assert c.local_flow_control_window(1) == 65535
+        assert c.local_flow_control_window(1) == self.DEFAULT_CONN_FLOW_WINDOW
 
     def test_new_streams_have_flow_control_per_settings(self, frame_factory):
         """
@@ -393,7 +402,8 @@ class TestFlowControl(object):
         c = jh2.connection.H2Connection()
         c.send_headers(1, self.example_request_headers)
 
-        assert c.remote_flow_control_window(1) == 65535
+        # The conn window is the bottleneck here, per RFC 7540 §6.9.2.
+        assert c.remote_flow_control_window(1) == self.DEFAULT_CONN_FLOW_WINDOW
 
         c.update_settings({jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 1280})
 
@@ -410,18 +420,21 @@ class TestFlowControl(object):
         c = jh2.connection.H2Connection()
         c.send_headers(1, self.example_request_headers)
 
-        # Increase the connection flow control window greatly.
-        c.increment_flow_control_window(increment=128000)
+        # Increase our conn-level inbound window so the stream window
+        # becomes the bottleneck. ``remote_flow_control_window`` reports
+        # what the peer can send us, which is bounded by our inbound conn
+        # window.
+        c.increment_flow_control_window(increment=12_000_000)
 
-        assert c.remote_flow_control_window(1) == 65535
+        assert c.remote_flow_control_window(1) == self.DEFAULT_FLOW_WINDOW
 
         c.update_settings(
-            {jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 128000}
+            {jh2.settings.SettingCodes.INITIAL_WINDOW_SIZE: 8_000_000}
         )
         f = frame_factory.build_settings_frame({}, ack=True)
         c.receive_data(f.serialize())
 
-        assert c.remote_flow_control_window(1) == 128000
+        assert c.remote_flow_control_window(1) == 8_000_000
 
     def test_new_streams_have_remote_flow_control(self, frame_factory):
         """
@@ -588,8 +601,9 @@ class TestFlowControl(object):
         c.initiate_connection()
         c.send_headers(1, self.example_request_headers)
 
-        # Go one byte smaller than the limit.
-        increment = 2**31 - 1 - c.outbound_flow_control_window
+        # Pump the stream-1 outbound window all the way up to 2**31 - 1.
+        stream_window = c._get_stream_by_id(1).outbound_flow_control_window
+        increment = 2**31 - 1 - stream_window
 
         f = frame_factory.build_window_update_frame(
             stream_id=1, increment=increment
@@ -641,6 +655,11 @@ class TestFlowControl(object):
     def test_send_update_on_closed_streams(self, frame_factory):
         c = jh2.connection.H2Connection()
         c.initiate_connection()
+        # Bump the connection-level inbound window so that the 40500 bytes
+        # received below stays well clear of the auto-update threshold.
+        c.increment_flow_control_window(
+            increment=self.DEFAULT_FLOW_WINDOW - self.DEFAULT_CONN_FLOW_WINDOW
+        )
         c.send_headers(1, self.example_request_headers)
         c.reset_stream(1)
 
@@ -652,16 +671,13 @@ class TestFlowControl(object):
         events = c.receive_data(f.serialize()*3)
         assert not events
 
+        # 40500 bytes is well below the auto-window-update threshold for the
+        # default ``INITIAL_WINDOW_SIZE`` (6 MiB), so we only expect the
+        # RST_STREAM frames echoed back; no WINDOW_UPDATE is emitted yet.
         expected = frame_factory.build_rst_stream_frame(
             stream_id=1,
             error_code=jh2.errors.ErrorCodes.STREAM_CLOSED,
-        ).serialize() * 2 + frame_factory.build_window_update_frame(
-            stream_id=0,
-            increment=40500,
-        ).serialize() + frame_factory.build_rst_stream_frame(
-            stream_id=1,
-            error_code=jh2.errors.ErrorCodes.STREAM_CLOSED,
-        ).serialize()
+        ).serialize() * 3
         assert c.data_to_send() == expected
 
         f = frame_factory.build_data_frame(b'')
@@ -687,15 +703,26 @@ class TestAutomaticFlowControl(object):
     ]
     server_config = jh2.config.H2Configuration(client_side=False)
 
-    DEFAULT_FLOW_WINDOW = 65535
+    DEFAULT_FLOW_WINDOW = 6291456
+    # Per RFC 7540 §6.9.2 the conn-level flow control window always starts
+    # at 65535 octets regardless of ``INITIAL_WINDOW_SIZE``.
+    DEFAULT_CONN_FLOW_WINDOW = 65535
 
     def _setup_connection_and_send_headers(self, frame_factory):
         """
         Setup a server-side H2Connection and send a headers frame, and then
-        clear the outbound data buffer. Also increase the maximum frame size.
+        clear the outbound data buffer. Also increase the maximum frame size
+        and the connection-level inbound window to match the stream window so
+        that flow-control accounting behaves as the tests below expect.
         """
         c = jh2.connection.H2Connection(config=self.server_config)
         c.initiate_connection()
+        # Bring our conn-level inbound window up to the per-stream default so
+        # the tests can pump up to ``DEFAULT_FLOW_WINDOW`` bytes without
+        # tripping connection-level flow control.
+        c.increment_flow_control_window(
+            increment=self.DEFAULT_FLOW_WINDOW - self.DEFAULT_CONN_FLOW_WINDOW
+        )
         c.receive_data(frame_factory.preamble())
 
         c.update_settings(
