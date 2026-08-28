@@ -1,6 +1,17 @@
 Release History
 ===============
 
+5.0.14 (2026-08-28)
+------------------
+
+- Fixed quadratic copying in ``FrameBuffer`` when parsing multiple coalesced
+  HTTP/2 frames, substantially improving large DATA-buffer throughput in both
+  pure-Python and optimized builds.
+- Reduced unnecessary copies when serializing unpadded DATA frames, preparing
+  single outbound frames, and passing headers through the optimized HPACK
+  encoder.
+- Reduced allocations in the optimized HPACK encoder.
+
 5.0.13 (2026-05-29)
 ------------------
 

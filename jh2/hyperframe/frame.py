@@ -318,6 +318,11 @@ class DataFrame(Padding, Frame):
         self.data = data
 
     def serialize_body(self) -> bytes:
+        if "PADDED" not in self.flags:
+            if isinstance(self.data, memoryview):
+                self.data = self.data.tobytes()
+            return self.data
+
         padding_data = self.serialize_padding_data()
         padding = b"\0" * self.pad_length
         if isinstance(self.data, memoryview):

@@ -31,6 +31,7 @@ class FrameBuffer:
 
     def __init__(self, server=False):
         self._data = bytearray()
+        self._data_offset = 0
         self.max_frame_size = 0
         self._preamble = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" if server else b""
         self._preamble_len = len(self._preamble)
@@ -53,7 +54,14 @@ class FrameBuffer:
             self._preamble_len -= of_which_preamble
             self._preamble = self._preamble[of_which_preamble:]
 
+        self._compact()
+
         self._data += data
+
+    def _compact(self):
+        if self._data_offset:
+            del self._data[: self._data_offset]
+            self._data_offset = 0
 
     def _validate_frame_length(self, length):
         """
@@ -117,27 +125,35 @@ class FrameBuffer:
         return self
 
     def __next__(self):
+        data_offset = self._data_offset
+        available = len(self._data) - data_offset
+
         # First, check that we have enough data to successfully parse the
         # next frame header. If not, bail. Otherwise, parse it.
-        if len(self._data) < 9:
+        if available < 9:
+            self._compact()
             raise StopIteration()
 
+        header = memoryview(self._data[data_offset : data_offset + 9])
         try:
-            f, length = Frame.parse_frame_header(memoryview(self._data[:9]))
+            f, length = Frame.parse_frame_header(header)
         except (InvalidDataError, InvalidFrameError) as e:  # pragma: no cover
             raise ProtocolError("Received frame with invalid header: %s" % str(e))
 
         # Next, check that we have enough length to parse the frame body. If
         # not, bail, leaving the frame header data in the buffer for next time.
-        if len(self._data) < length + 9:
+        if available < length + 9:
+            self._compact()
             raise StopIteration()
 
         # Confirm the frame has an appropriate length.
         self._validate_frame_length(length)
 
         # Try to parse the frame body
+        body_start = data_offset + 9
+        body = memoryview(self._data[body_start : body_start + length])
         try:
-            f.parse_body(memoryview(self._data[9 : 9 + length]))
+            f.parse_body(body)
         except InvalidDataError:
             raise ProtocolError("Received frame with non-compliant data")
         except InvalidFrameError:
@@ -145,7 +161,10 @@ class FrameBuffer:
 
         # At this point, as we know we'll use or discard the entire frame, we
         # can update the data.
-        self._data = self._data[9 + length :]
+        self._data_offset = data_offset + 9 + length
+        if self._data_offset == len(self._data):
+            self._data = bytearray()
+            self._data_offset = 0
 
         # Pass the frame through the header buffer.
         f = self._update_header_buffer(f)

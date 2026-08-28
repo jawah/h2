@@ -1,10 +1,202 @@
+use std::collections::VecDeque;
+
 use httlib_hpack::{Decoder as InternalDecoder, Encoder as InternalEncoder};
+use pyo3::class::{PyTraverseError, PyVisit};
 use pyo3::exceptions::PyException;
-use pyo3::types::{PyList, PyTuple};
+use pyo3::types::{PyList, PyMemoryView, PyTuple};
 use pyo3::{prelude::*, types::PyBytes, BoundObject};
 
 pyo3::create_exception!(_hazmat, HPACKError, PyException);
 pyo3::create_exception!(_hazmat, OversizedHeaderListError, PyException);
+
+enum BytesChunkData {
+    Bytes(Py<PyBytes>),
+    MemoryView(Py<PyAny>),
+}
+
+struct BytesChunk {
+    data: BytesChunkData,
+    offset: usize,
+    len: usize,
+}
+
+#[pyclass(module = "jh2._hazmat", name = "_BytesQueueBuffer")]
+struct BytesQueueBuffer {
+    chunks: VecDeque<BytesChunk>,
+    size: usize,
+}
+
+#[pymethods]
+impl BytesQueueBuffer {
+    #[new]
+    fn new() -> Self {
+        Self {
+            chunks: VecDeque::new(),
+            size: 0,
+        }
+    }
+
+    fn __len__(&self) -> usize {
+        self.size
+    }
+
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        for chunk in &self.chunks {
+            match &chunk.data {
+                BytesChunkData::Bytes(data) => visit.call(data)?,
+                BytesChunkData::MemoryView(data) => visit.call(data)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn __clear__(&mut self) {
+        self.chunks.clear();
+        self.size = 0;
+    }
+
+    fn put(&mut self, data: &Bound<'_, PyAny>) -> PyResult<()> {
+        let len = data.len()?;
+        let data = if let Ok(data) = data.cast::<PyBytes>() {
+            BytesChunkData::Bytes(data.clone().unbind())
+        } else {
+            data.cast::<PyMemoryView>()?;
+            BytesChunkData::MemoryView(data.clone().unbind())
+        };
+        self.size += len;
+        self.chunks.push_back(BytesChunk {
+            data,
+            offset: 0,
+            len,
+        });
+        Ok(())
+    }
+
+    fn put_many(&mut self, chunks: &Bound<'_, PyAny>) -> PyResult<()> {
+        for chunk in chunks.try_iter()? {
+            let chunk = chunk?;
+            if chunk.len()? != 0 {
+                self.put(&chunk)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn get(&mut self, py: Python<'_>, n: isize) -> PyResult<Py<PyBytes>> {
+        if n == 0 {
+            return Ok(PyBytes::new(py, b"").unbind());
+        }
+        if self.chunks.is_empty() {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err("buffer is empty"));
+        }
+        if n < 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err("n should be > 0"));
+        }
+
+        while self
+            .chunks
+            .front()
+            .is_some_and(|chunk| chunk.len == chunk.offset)
+        {
+            self.chunks.pop_front();
+        }
+        if self.chunks.is_empty() {
+            return Ok(PyBytes::new(py, b"").unbind());
+        }
+
+        self.ensure_front_bytes(py)?;
+        let requested = n as usize;
+        if let Some(chunk) = self.chunks.front() {
+            let chunk_len = chunk.len - chunk.offset;
+            if chunk.offset == 0 && chunk_len == requested {
+                self.size -= requested;
+                let chunk = self.chunks.pop_front().unwrap();
+                if let BytesChunkData::Bytes(data) = chunk.data {
+                    return Ok(data);
+                }
+                unreachable!();
+            }
+        }
+
+        let output_len = requested.min(self.size);
+        let output = new_bytes_with(py, output_len, |output| {
+            let mut written = 0;
+            while written < output_len {
+                self.ensure_front_bytes(py)?;
+                let Some(chunk) = self.chunks.front() else {
+                    break;
+                };
+                let BytesChunkData::Bytes(chunk_data) = &chunk.data else {
+                    unreachable!();
+                };
+                let chunk_data = chunk_data.bind(py).as_bytes();
+                let available = chunk.len - chunk.offset;
+                if available == 0 {
+                    self.chunks.pop_front();
+                    continue;
+                }
+
+                let copied = available.min(output_len - written);
+                output[written..written + copied]
+                    .copy_from_slice(&chunk_data[chunk.offset..chunk.offset + copied]);
+                written += copied;
+
+                if copied == available {
+                    self.chunks.pop_front();
+                } else {
+                    self.chunks.front_mut().unwrap().offset += copied;
+                }
+            }
+            if written != output_len {
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                    "byte queue size invariant violated",
+                ));
+            }
+            Ok(())
+        })?;
+        self.size -= output_len;
+        while self
+            .chunks
+            .front()
+            .is_some_and(|chunk| chunk.len == chunk.offset)
+        {
+            self.chunks.pop_front();
+        }
+        Ok(output.unbind())
+    }
+
+    fn ensure_front_bytes(&mut self, py: Python<'_>) -> PyResult<()> {
+        let Some(chunk) = self.chunks.front_mut() else {
+            return Ok(());
+        };
+        let BytesChunkData::MemoryView(data) = &chunk.data else {
+            return Ok(());
+        };
+
+        let data = data
+            .bind(py)
+            .call_method0("tobytes")?
+            .cast_into::<PyBytes>()?
+            .unbind();
+        chunk.data = BytesChunkData::Bytes(data);
+        Ok(())
+    }
+}
+
+fn new_bytes_with<'py>(
+    py: Python<'py>,
+    len: usize,
+    fill: impl FnOnce(&mut [u8]) -> PyResult<()>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    unsafe {
+        let ptr = pyo3::ffi::PyBytes_FromStringAndSize(std::ptr::null(), len as isize);
+        let bytes: Bound<'py, PyBytes> =
+            Bound::from_owned_ptr_or_err(py, ptr)?.cast_into_unchecked();
+        let buffer = pyo3::ffi::PyBytes_AsString(ptr).cast::<u8>();
+        fill(std::slice::from_raw_parts_mut(buffer, len))?;
+        Ok(bytes)
+    }
+}
 
 #[pyclass(module = "jh2._hazmat")]
 pub struct Encoder {
@@ -45,17 +237,17 @@ impl Encoder {
         let mut dst = std::mem::take(&mut self.pending_table_size_update);
 
         py.detach(|| -> PyResult<()> {
-            for (header, value, sensitive) in &headers {
+            for (header, value, sensitive) in headers {
                 let mut header_flags: u8 = flags;
 
-                if *sensitive {
+                if sensitive {
                     header_flags |= InternalEncoder::NEVER_INDEXED;
                 } else {
                     header_flags |= InternalEncoder::WITH_INDEXING;
                 }
 
                 self.inner
-                    .encode((header.clone(), value.clone(), header_flags), &mut dst)
+                    .encode((header, value, header_flags), &mut dst)
                     .map_err(|e| HPACKError::new_err(format!("encoder failure: {e:?}")))?;
             }
             Ok(())
@@ -88,7 +280,7 @@ impl Encoder {
 
         py.detach(|| {
             self.inner
-                .encode((header.0.clone(), header.1.clone(), flags), &mut dst)
+                .encode((header.0, header.1, flags), &mut dst)
                 .map_err(|e| HPACKError::new_err(format!("encoder failure: {e:?}")))
         })?;
 
@@ -234,9 +426,9 @@ fn _hazmat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
         "OversizedHeaderListError",
         py.get_type::<OversizedHeaderListError>(),
     )?;
-
     m.add_class::<Decoder>()?;
     m.add_class::<Encoder>()?;
+    m.add_class::<BytesQueueBuffer>()?;
 
     Ok(())
 }
