@@ -37,20 +37,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-14, windows-latest ]
-        python_version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11']
+        python_version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.11']
         exclude:
           - os: macos-14
             python_version: '3.7'
-          - os: macos-14
-            python_version: 'pypy-3.7'
-          - os: windows-latest
-            python_version: pypy-3.7
-          - os: windows-latest
-            python_version: pypy-3.8
-          - os: windows-latest
-            python_version: pypy-3.9
-          - os: windows-latest
-            python_version: pypy-3.10
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -98,12 +88,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-22.04, macos-14, windows-latest ]
-        python_version: [ '3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11' ]
+        python_version: [ '3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.11' ]
         exclude:
           - os: macos-14
             python_version: '3.7'
-          - os: macos-14
-            python_version: 'pypy-3.7'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
