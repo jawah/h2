@@ -543,7 +543,10 @@ class H2Connection:
     def _prepare_for_sending(self, frames):
         if not frames:
             return
-        self._data_to_send += b"".join(f.serialize() for f in frames)
+        if len(frames) == 1:
+            self._data_to_send += frames[0].serialize()
+        else:
+            self._data_to_send += b"".join(f.serialize() for f in frames)
         assert all(f.body_len <= self.max_outbound_frame_size for f in frames)
 
     def _open_streams(self, remainder):
