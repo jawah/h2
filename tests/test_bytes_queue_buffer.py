@@ -20,6 +20,10 @@ pytestmark = pytest.mark.skipif(
     _BytesQueueBuffer is None,
     reason="native byte queue is unavailable",
 )
+cpython_only = pytest.mark.skipif(
+    platform.python_implementation() != "CPython",
+    reason="asserts CPython reference-release timing",
+)
 
 
 class ReferenceBuffer:
@@ -152,10 +156,7 @@ def test_oversized_read_consumes_trailing_empty_chunk():
         buffer.get(1)
 
 
-@pytest.mark.skipif(
-    platform.python_implementation() != "CPython",
-    reason="sys.getrefcount is a CPython implementation detail",
-)
+@cpython_only
 def test_dropping_queue_releases_bytes_reference():
     chunk = b"a sufficiently long value to avoid interning"
     reference_count = sys.getrefcount(chunk)
@@ -168,6 +169,7 @@ def test_dropping_queue_releases_bytes_reference():
     assert sys.getrefcount(chunk) == reference_count
 
 
+@cpython_only
 def test_consuming_memoryview_releases_export():
     def consume_view():
         source = bytearray(b"abcdef")
@@ -187,6 +189,7 @@ def test_consuming_memoryview_releases_export():
     assert source == b"abcdefghi"
 
 
+@cpython_only
 def test_dropping_queue_releases_memoryview_export():
     def drop_view():
         source = bytearray(b"abcdef")
@@ -204,6 +207,7 @@ def test_dropping_queue_releases_memoryview_export():
     assert source == b"abcdefghi"
 
 
+@cpython_only
 def test_memoryview_exporter_reference_cycle_is_collected():
     class BufferOwner(bytearray):
         pass
