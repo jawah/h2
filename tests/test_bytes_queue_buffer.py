@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import platform
 import sys
 import weakref
 from collections import deque
@@ -151,6 +152,10 @@ def test_oversized_read_consumes_trailing_empty_chunk():
         buffer.get(1)
 
 
+@pytest.mark.skipif(
+    platform.python_implementation() != "CPython",
+    reason="sys.getrefcount is a CPython implementation detail",
+)
 def test_dropping_queue_releases_bytes_reference():
     chunk = b"a sufficiently long value to avoid interning"
     reference_count = sys.getrefcount(chunk)
@@ -164,15 +169,17 @@ def test_dropping_queue_releases_bytes_reference():
 
 
 def test_consuming_memoryview_releases_export():
-    source = bytearray(b"abcdef")
-    view = memoryview(source)
-    view_reference = weakref.ref(view)
-    buffer = _BytesQueueBuffer()
-    buffer.put(view)
-    del view
+    def consume_view():
+        source = bytearray(b"abcdef")
+        view = memoryview(source)
+        view_reference = weakref.ref(view)
+        buffer = _BytesQueueBuffer()
+        buffer.put(view)
 
-    assert view_reference() is not None
-    assert buffer.get(6) == b"abcdef"
+        assert buffer.get(6) == b"abcdef"
+        return source, view_reference
+
+    source, view_reference = consume_view()
     gc.collect()
     assert view_reference() is None
 
@@ -181,14 +188,15 @@ def test_consuming_memoryview_releases_export():
 
 
 def test_dropping_queue_releases_memoryview_export():
-    source = bytearray(b"abcdef")
-    view = memoryview(source)
-    view_reference = weakref.ref(view)
-    buffer = _BytesQueueBuffer()
-    buffer.put(view)
-    del view
+    def drop_view():
+        source = bytearray(b"abcdef")
+        view = memoryview(source)
+        view_reference = weakref.ref(view)
+        buffer = _BytesQueueBuffer()
+        buffer.put(view)
+        return source, view_reference
 
-    del buffer
+    source, view_reference = drop_view()
     gc.collect()
     assert view_reference() is None
 
@@ -200,13 +208,15 @@ def test_memoryview_exporter_reference_cycle_is_collected():
     class BufferOwner(bytearray):
         pass
 
-    owner = BufferOwner(b"abcdef")
-    owner_reference = weakref.ref(owner)
-    buffer = _BytesQueueBuffer()
-    owner.buffer = buffer
-    buffer.put(memoryview(owner))
+    def make_cycle():
+        owner = BufferOwner(b"abcdef")
+        owner_reference = weakref.ref(owner)
+        buffer = _BytesQueueBuffer()
+        owner.buffer = buffer
+        buffer.put(memoryview(owner))
+        return owner_reference
 
-    del buffer, owner
+    owner_reference = make_cycle()
     gc.collect()
 
     assert owner_reference() is None
