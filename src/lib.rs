@@ -382,6 +382,27 @@ impl BytesQueueBuffer {
     }
 
     #[cfg(not(queue_native_buffer))]
+    fn queue_slice(
+        py: Python<'_>,
+        start: isize,
+        stop: isize,
+        step: isize,
+    ) -> PyResult<Bound<'_, PySlice>> {
+        // PyO3 0.28.3's PySlice::new leaks its index references. PySlice_New
+        // borrows them, so keep owned bounds until it has retained its copies.
+        let start = start.into_pyobject(py)?;
+        let stop = stop.into_pyobject(py)?;
+        let step = step.into_pyobject(py)?;
+        unsafe {
+            Ok(Bound::from_owned_ptr_or_err(
+                py,
+                pyo3::ffi::PySlice_New(start.as_ptr(), stop.as_ptr(), step.as_ptr()),
+            )?
+            .cast_into_unchecked())
+        }
+    }
+
+    #[cfg(not(queue_native_buffer))]
     fn buffer_bytes<'py>(data: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
         // This stable-ABI entry point lets CPython acquire and copy the buffer,
         // avoiding a Python method lookup. It returns exact bytes or an error.
@@ -461,12 +482,12 @@ impl BytesQueueBuffer {
             let view = if chunk.offset == 0 && output_len == chunk.len {
                 data.bind(py).clone()
             } else {
-                data.bind(py).get_item(PySlice::new(
+                data.bind(py).get_item(Self::queue_slice(
                     py,
                     chunk.offset as isize,
                     (chunk.offset + output_len) as isize,
                     1,
-                ))?
+                )?)?
             };
             Self::buffer_bytes(&view)?
         } else if has_views && !(small_views && Self::copy_small_views(py)) {
@@ -502,12 +523,12 @@ impl BytesQueueBuffer {
                     } else {
                         data.clone()
                     };
-                    parts.append(view.get_item(PySlice::new(
+                    parts.append(view.get_item(Self::queue_slice(
                         py,
                         chunk.offset as isize,
                         (chunk.offset + copied) as isize,
                         1,
-                    ))?)?;
+                    )?)?)?;
                 }
                 remaining -= copied;
             }
@@ -541,12 +562,12 @@ impl BytesQueueBuffer {
                             let view = if chunk.offset == 0 && copied == chunk.len {
                                 data.bind(py).clone()
                             } else {
-                                data.bind(py).get_item(PySlice::new(
+                                data.bind(py).get_item(Self::queue_slice(
                                     py,
                                     chunk.offset as isize,
                                     (chunk.offset + copied) as isize,
                                     1,
-                                ))?
+                                )?)?
                             };
                             temporary = Self::buffer_bytes(&view)?;
                             temporary.as_bytes()
@@ -793,6 +814,10 @@ fn _hazmat(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     m.add_class::<Decoder>()?;
     m.add_class::<Encoder>()?;
+    // PyPy's cpyext retains converted memoryviews, even for a no-op C call.
+    // Omitting the queue lets callers select their Python implementation while
+    // retaining the native HPACK codec. Revisit when the runtime leak is fixed.
+    #[cfg(not(PyPy))]
     m.add_class::<BytesQueueBuffer>()?;
 
     Ok(())

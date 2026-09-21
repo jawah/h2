@@ -669,6 +669,39 @@ def test_large_memoryview_read_allocates_only_output_payload(prefix, oversized):
     assert peak < output_len + 128 * 1024
 
 
+@cpython_only
+@requires_tracemalloc
+@pytest.mark.parametrize("size", (8192, 65536))
+@pytest.mark.parametrize("prefix", (b"", b"x"))
+def test_repeated_partial_reads_do_not_retain_allocations(size, prefix):
+    buffer = _BytesQueueBuffer()
+    chunks = [prefix, memoryview(bytearray(size))]
+
+    def drain():
+        buffer.put_many(chunks)
+        buffer.get(4096)
+        buffer.get(len(buffer))
+
+    # Populate interpreter caches before measuring live allocations. Peak-only
+    # checks cannot catch a small leak accumulating on every partial read.
+    drain()
+    if tracemalloc.is_tracing():
+        pytest.skip("requires isolated tracemalloc measurements")
+    gc.collect()
+    tracemalloc.start()
+    try:
+        before = tracemalloc.get_traced_memory()[0]
+        for _ in range(2000):
+            drain()
+        gc.collect()
+        retained = tracemalloc.get_traced_memory()[0] - before
+    finally:
+        tracemalloc.stop()
+
+    assert len(buffer) == 0
+    assert retained < 64 * 1024
+
+
 def test_negative_read_matches_python_buffer_ordering():
     buffer = _BytesQueueBuffer()
     with pytest.raises(RuntimeError, match="buffer is empty"):
