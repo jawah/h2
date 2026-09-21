@@ -1,12 +1,16 @@
-//! Buffer API path for GIL-enabled interpreters with the full API or abi3-py311.
-//! Free-threaded builds use the Python-managed copying path in lib.rs.
+//! Buffer API metadata and the GIL-only native copying path.
+//! Free-threaded builds use descriptors only for metadata; Python copies payloads.
 
-use pyo3::{ffi, prelude::*, types::PyBytes};
+#[cfg(queue_native_buffer)]
+use pyo3::types::PyBytes;
+use pyo3::{ffi, prelude::*};
 
-use crate::{BytesChunkData, BytesQueueBuffer};
+#[cfg(queue_native_buffer)]
+use crate::{BytesChunkData, BytesQueueBuffer, RetiredChunks};
 
 /// Acquire a temporary export at a stable stack address. The closure cannot
-/// retain the descriptor. All callers hold the GIL and pass exact memoryviews.
+/// retain the descriptor. Callers pass exact memoryviews. Payload reads through
+/// the descriptor require the GIL; free-threaded callers inspect metadata only.
 pub(super) fn with_buffer<T>(
     data: &Bound<'_, PyAny>,
     use_buffer: impl FnOnce(&ffi::Py_buffer) -> PyResult<T>,
@@ -29,11 +33,13 @@ pub(super) fn with_buffer<T>(
     use_buffer(&export.0)
 }
 
+#[cfg(queue_native_buffer)]
 impl BytesQueueBuffer {
     pub(super) fn copy_output<'py>(
         &mut self,
         py: Python<'py>,
         output_len: usize,
+        retired: &mut RetiredChunks,
     ) -> PyResult<Bound<'py, PyBytes>> {
         // Strided tobytes() can itself need a temporary contiguous allocation.
         // Flatten before allocating the output to avoid an extra live payload.
@@ -55,7 +61,13 @@ impl BytesQueueBuffer {
                             .bind(py)
                             .call_method0(pyo3::intern!(py, "tobytes"))?
                             .cast_into::<PyBytes>()?;
-                        chunk.data = BytesChunkData::Bytes(data.unbind());
+                        retired.push(
+                            std::mem::replace(
+                                &mut chunk.data,
+                                BytesChunkData::Bytes(data.unbind()),
+                            ),
+                            py,
+                        );
                         self.strided_chunks -= 1;
                     }
                 }

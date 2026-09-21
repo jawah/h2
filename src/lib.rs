@@ -8,9 +8,9 @@ use pyo3::intern;
 #[cfg(not(queue_native_buffer))]
 use pyo3::types::PySlice;
 use pyo3::types::{PyList, PyMemoryView, PyTuple};
-use pyo3::{prelude::*, types::PyBytes, BoundObject};
+use pyo3::{prelude::*, types::PyBytes, BoundObject, PyClassGuardMut};
 
-#[cfg(queue_native_buffer)]
+#[cfg(any(queue_native_buffer, Py_GIL_DISABLED))]
 mod queue_buffer;
 
 pyo3::create_exception!(_hazmat, HPACKError, PyException);
@@ -25,6 +25,63 @@ struct BytesChunk {
     data: BytesChunkData,
     offset: usize,
     len: usize,
+}
+
+/// Keep objects which may run Python finalizers alive until the queue borrow ends.
+/// One retired object fits inline; ordinary bytes never enter this collection.
+#[derive(Default)]
+enum RetiredChunks {
+    #[default]
+    Empty,
+    One(Py<PyAny>),
+    Many(Vec<Py<PyAny>>),
+}
+
+impl RetiredChunks {
+    #[inline]
+    fn push(&mut self, data: BytesChunkData, py: Python<'_>) {
+        let data = match data {
+            BytesChunkData::Bytes(data) => {
+                if data.bind(py).is_exact_instance_of::<PyBytes>() {
+                    return;
+                }
+                data.into_any()
+            }
+            BytesChunkData::MemoryView { data, .. } => data,
+        };
+        self.push_owner(data);
+    }
+
+    // Keep allocation and growth out of the ordinary-bytes release path.
+    #[inline(never)]
+    fn push_owner(&mut self, data: Py<PyAny>) {
+        match self {
+            Self::Empty => *self = Self::One(data),
+            Self::One(_) => {
+                let Self::One(first) = std::mem::take(self) else {
+                    unreachable!()
+                };
+                let mut items = Vec::with_capacity(8);
+                items.extend([first, data]);
+                *self = Self::Many(items);
+            }
+            Self::Many(items) => items.push(data),
+        }
+    }
+
+    fn release(self, py: Python<'_>) {
+        // We already know this thread is attached. Release directly instead of
+        // consulting PyO3's deferred-reference machinery for each owner.
+        match self {
+            Self::Empty => {}
+            Self::One(data) => data.drop_ref(py),
+            Self::Many(items) => {
+                for data in items {
+                    data.drop_ref(py);
+                }
+            }
+        }
+    }
 }
 
 #[pyclass(module = "jh2._hazmat", name = "_BytesQueueBuffer")]
@@ -61,27 +118,87 @@ impl BytesQueueBuffer {
         Ok(())
     }
 
-    fn __clear__(&mut self) {
-        self.chunks.clear();
-        self.size = 0;
+    fn __clear__(mut slf: PyClassGuardMut<'_, Self>) {
+        slf.size = 0;
         #[cfg(queue_native_buffer)]
         {
-            self.strided_chunks = 0;
+            slf.strided_chunks = 0;
         }
+        let chunks = std::mem::take(&mut slf.chunks);
+        drop(slf);
+        drop(chunks);
     }
 
-    fn put(&mut self, data: &Bound<'_, PyAny>) -> PyResult<()> {
-        self.enqueue(data, false)
-    }
-
-    fn put_many(&mut self, chunks: &Bound<'_, PyAny>) -> PyResult<()> {
-        for chunk in chunks.try_iter()? {
-            self.enqueue(&chunk?, true)?;
+    fn put(slf: &Bound<'_, Self>, data: &Bound<'_, PyAny>) -> PyResult<()> {
+        if let Some(chunk) = Self::prepare_chunk(data, false)? {
+            slf.extract::<PyClassGuardMut<'_, Self>>()?.enqueue(chunk);
         }
         Ok(())
     }
 
-    fn get(&mut self, py: Python<'_>, n: isize) -> PyResult<Py<PyBytes>> {
+    fn put_many(slf: &Bound<'_, Self>, chunks: &Bound<'_, PyAny>) -> PyResult<()> {
+        // Advancing exact built-in sequence iterators cannot call Python.
+        // Use the list iterator itself to preserve its mutation semantics.
+        if chunks.is_exact_instance_of::<PyList>() || chunks.is_exact_instance_of::<PyTuple>() {
+            return Self::enqueue_many::<true>(slf, chunks.try_iter()?);
+        }
+        Self::enqueue_many::<false>(slf, chunks.try_iter()?)
+    }
+
+    fn get(slf: PyClassGuardMut<'_, Self>, py: Python<'_>, n: isize) -> PyResult<Py<PyBytes>> {
+        let mut retired = RetiredChunks::default();
+        // This declaration order also releases the borrow first during unwinding.
+        let mut queue = slf;
+        let result = queue.read(py, n, &mut retired);
+        // Also release the borrow before running finalizers on error paths.
+        drop(queue);
+        retired.release(py);
+        result
+    }
+}
+
+impl BytesQueueBuffer {
+    fn enqueue_many<'py, const BUILTIN: bool>(
+        slf: &Bound<'_, Self>,
+        chunks: impl Iterator<Item = PyResult<Bound<'py, PyAny>>>,
+    ) -> PyResult<()> {
+        // Only exact bytes from built-in iterators can share a borrow. Preparing
+        // any other input, or advancing a user iterator, happens without one.
+        let mut queue: Option<PyClassGuardMut<'_, Self>> = None;
+        for data in chunks {
+            let data = data?;
+            if BUILTIN && data.is_exact_instance_of::<PyBytes>() {
+                if queue.is_none() {
+                    queue = Some(slf.extract()?);
+                }
+                // The exact-type check above also excludes finalizers on empty
+                // items. No Python allocation or callback occurs in this path.
+                let data = unsafe { data.cast_into_unchecked::<PyBytes>() };
+                let len = data.as_bytes().len();
+                if len != 0 {
+                    queue.as_mut().unwrap().enqueue(BytesChunk {
+                        data: BytesChunkData::Bytes(data.unbind()),
+                        offset: 0,
+                        len,
+                    });
+                }
+            } else {
+                drop(queue.take());
+                if let Some(chunk) = Self::prepare_chunk(&data, true)? {
+                    slf.extract::<PyClassGuardMut<'_, Self>>()?.enqueue(chunk);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn read(
+        &mut self,
+        py: Python<'_>,
+        n: isize,
+        retired: &mut RetiredChunks,
+    ) -> PyResult<Py<PyBytes>> {
         if n == 0 {
             return Ok(PyBytes::new(py, b"").unbind());
         }
@@ -97,7 +214,7 @@ impl BytesQueueBuffer {
             .front()
             .is_some_and(|chunk| chunk.len == chunk.offset)
         {
-            self.chunks.pop_front();
+            retired.push(self.chunks.pop_front().unwrap().data, py);
         }
         if self.chunks.is_empty() {
             return Ok(PyBytes::new(py, b"").unbind());
@@ -120,7 +237,7 @@ impl BytesQueueBuffer {
             }
         }
 
-        let output = self.copy_output(py, output_len)?;
+        let output = self.copy_output(py, output_len, retired)?;
 
         // Do not consume any input until all fallible output work succeeds.
         self.size -= output_len;
@@ -132,14 +249,11 @@ impl BytesQueueBuffer {
                 break;
             }
             remaining -= available;
-            self.chunks.pop_front();
+            retired.push(self.chunks.pop_front().unwrap().data, py);
         }
         Ok(output.unbind())
     }
-}
-
-impl BytesQueueBuffer {
-    fn enqueue(&mut self, data: &Bound<'_, PyAny>, skip_empty: bool) -> PyResult<()> {
+    fn prepare_chunk(data: &Bound<'_, PyAny>, skip_empty: bool) -> PyResult<Option<BytesChunk>> {
         let (data, len) = if let Ok(data) = data.cast::<PyBytes>() {
             (
                 BytesChunkData::Bytes(data.clone().unbind()),
@@ -148,9 +262,36 @@ impl BytesQueueBuffer {
         } else {
             // Keep put_many's existing treatment of empty iterable items.
             if skip_empty && !data.is_instance_of::<PyMemoryView>() && data.len()? == 0 {
-                return Ok(());
+                return Ok(None);
             }
             data.cast::<PyMemoryView>()?;
+            #[cfg(all(not(queue_native_buffer), not(Py_GIL_DISABLED)))]
+            {
+                // A C-contiguous view covering an exact bytes owner can retain
+                // that immutable payload directly. Equal byte counts exclude
+                // offset slices; contiguity excludes reversed/strided views.
+                // Do not use readonly here: a readonly view may wrap mutable
+                // storage. Exclude subclasses and their buffer/finalizer hooks.
+                let py = data.py();
+                let owner = data.getattr(intern!(py, "obj"))?;
+                if owner.is_exact_instance_of::<PyBytes>() {
+                    let owner = unsafe { owner.cast_into_unchecked::<PyBytes>() };
+                    let len = data.getattr(intern!(py, "nbytes"))?.extract::<usize>()?;
+                    if owner.as_bytes().len() == len
+                        && data.getattr(intern!(py, "c_contiguous"))?.is_truthy()?
+                    {
+                        return Ok(if skip_empty && len == 0 {
+                            None
+                        } else {
+                            Some(BytesChunk {
+                                data: BytesChunkData::Bytes(owner.unbind()),
+                                offset: 0,
+                                len,
+                            })
+                        });
+                    }
+                }
+            }
             let (view, len, contiguous) = Self::own_view(data)?;
             (
                 BytesChunkData::MemoryView {
@@ -161,12 +302,20 @@ impl BytesQueueBuffer {
             )
         };
         if skip_empty && len == 0 {
-            return Ok(());
+            return Ok(None);
         }
+        Ok(Some(BytesChunk {
+            data,
+            offset: 0,
+            len,
+        }))
+    }
+
+    fn enqueue(&mut self, chunk: BytesChunk) {
         #[cfg(queue_native_buffer)]
-        if len != 0
+        if chunk.len != 0
             && matches!(
-                data,
+                chunk.data,
                 BytesChunkData::MemoryView {
                     contiguous: false,
                     ..
@@ -175,13 +324,8 @@ impl BytesQueueBuffer {
         {
             self.strided_chunks += 1;
         }
-        self.size += len;
-        self.chunks.push_back(BytesChunk {
-            data,
-            offset: 0,
-            len,
-        });
-        Ok(())
+        self.size += chunk.len;
+        self.chunks.push_back(chunk);
     }
 
     #[cfg(queue_native_buffer)]
@@ -195,11 +339,38 @@ impl BytesQueueBuffer {
         })
     }
 
-    #[cfg(not(queue_native_buffer))]
+    #[cfg(all(not(queue_native_buffer), not(Py_GIL_DISABLED)))]
     fn own_view<'py>(data: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, usize, bool)> {
         let py = data.py();
-        let len = data.getattr(intern!(py, "nbytes"))?.extract::<usize>()?;
-        let contiguous = data.getattr(intern!(py, "c_contiguous"))?.is_truthy()?;
+        // A successful cast both checks C contiguity and gives a one-dimensional
+        // byte view, whose length is the byte count. Avoid separate attribute
+        // lookups and Python integer allocation for ordinary contiguous input.
+        match data.call_method1(intern!(py, "cast"), (intern!(py, "B"),)) {
+            Ok(view) => {
+                let len = view.len()?;
+                Ok((view, len, true))
+            }
+            Err(err) if err.is_instance_of::<pyo3::exceptions::PyTypeError>(py) => {
+                // Strided views and empty shapes cannot always be cast. Keep an
+                // independent view and defer flattening until a read needs it.
+                let view = PyMemoryView::from(data)?.into_any();
+                let len = view.getattr(intern!(py, "nbytes"))?.extract::<usize>()?;
+                Ok((view, len, false))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    #[cfg(Py_GIL_DISABLED)]
+    fn own_view<'py>(data: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, usize, bool)> {
+        let py = data.py();
+        let (len, contiguous) = queue_buffer::with_buffer(data, |buffer| {
+            // Metadata is stable for the lifetime of the export. On free-threaded
+            // Python we never read payload memory through this descriptor.
+            Ok((buffer.len as usize, unsafe {
+                pyo3::ffi::PyBuffer_IsContiguous(buffer, b'C' as _) != 0
+            }))
+        })?;
         // Empty shapes cannot always be cast. Own an independent view so
         // releasing the caller's view cannot invalidate queued data.
         let view = if contiguous && len != 0 {
@@ -211,13 +382,47 @@ impl BytesQueueBuffer {
     }
 
     #[cfg(not(queue_native_buffer))]
+    fn buffer_bytes<'py>(data: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+        // This stable-ABI entry point lets CPython acquire and copy the buffer,
+        // avoiding a Python method lookup. It returns exact bytes or an error.
+        unsafe {
+            Ok(Bound::from_owned_ptr_or_err(
+                data.py(),
+                pyo3::ffi::PyBytes_FromObject(data.as_ptr()),
+            )?
+            .cast_into_unchecked())
+        }
+    }
+
+    #[cfg(not(queue_native_buffer))]
+    fn copy_small_views(py: Python<'_>) -> bool {
+        // Python 3.7/3.8 show severe allocator churn with join(memoryviews).
+        // Bounded copies avoid it there; newer runtimes perform better with join.
+        // Py_GetVersion is process-wide and does not invoke Python callbacks.
+        static USE_COPIES: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *USE_COPIES.get_or_init(|| py.version_info() < (3, 9))
+    }
+
+    #[cfg(not(queue_native_buffer))]
     fn copy_output<'py>(
         &mut self,
         py: Python<'py>,
         output_len: usize,
+        retired: &mut RetiredChunks,
     ) -> PyResult<Bound<'py, PyBytes>> {
+        // A complete view already knows how to produce the final bytes object.
+        // This also avoids flattening a complete strided view into a separate
+        // temporary payload. Consumption and owner release still happen later.
+        if let Some(chunk) = self.chunks.front() {
+            if chunk.offset == 0 && chunk.len == output_len {
+                if let BytesChunkData::MemoryView { data, .. } = &chunk.data {
+                    return Self::buffer_bytes(data.bind(py));
+                }
+            }
+        }
         let mut remaining = output_len;
         let mut has_views = false;
+        let mut small_views = true;
         let mut chunk_count = 0;
         for chunk in &mut self.chunks {
             if remaining == 0 {
@@ -229,13 +434,16 @@ impl BytesQueueBuffer {
             } = &chunk.data
             {
                 // Strided views still need flattening; cache it for partial reads.
-                let data = data
-                    .bind(py)
-                    .call_method0(intern!(py, "tobytes"))?
-                    .cast_into::<PyBytes>()?;
-                chunk.data = BytesChunkData::Bytes(data.unbind());
+                let data = Self::buffer_bytes(data.bind(py))?;
+                retired.push(
+                    std::mem::replace(&mut chunk.data, BytesChunkData::Bytes(data.unbind())),
+                    py,
+                );
             }
             has_views |= matches!(&chunk.data, BytesChunkData::MemoryView { .. });
+            if matches!(&chunk.data, BytesChunkData::MemoryView { .. }) {
+                small_views &= chunk.len <= 32 * 1024;
+            }
             remaining -= remaining.min(chunk.len - chunk.offset);
             chunk_count += 1;
         }
@@ -260,9 +468,8 @@ impl BytesQueueBuffer {
                     1,
                 ))?
             };
-            view.call_method0(intern!(py, "tobytes"))?
-                .cast_into::<PyBytes>()?
-        } else if has_views {
+            Self::buffer_bytes(&view)?
+        } else if has_views && !(small_views && Self::copy_small_views(py)) {
             // join copies contiguous buffers directly into the result using
             // Python's buffer API, which abi3-py37 cannot access from Rust.
             let parts = PyList::empty(py);
@@ -308,7 +515,9 @@ impl BytesQueueBuffer {
                 .call_method1(intern!(py, "join"), (parts,))?
                 .cast_into::<PyBytes>()?
         } else {
-            // Keep bytes-only reads free of per-chunk Python allocations.
+            // Bytes-only reads need no per-chunk allocation. On Python 3.7/3.8,
+            // small views use temporaries bounded to 32 KiB instead of join.
+            // Copy only the consumed prefix; never snapshot an unread mutable tail.
             // The unpublished result is uninitialized: write via raw pointers,
             // never a Rust u8 slice, and initialize every byte before returning.
             unsafe {
@@ -319,11 +528,30 @@ impl BytesQueueBuffer {
                 let buffer = pyo3::ffi::PyBytes_AsString(ptr).cast::<u8>();
                 let mut written = 0;
                 for chunk in self.chunks.iter().take(chunk_count) {
-                    let BytesChunkData::Bytes(data) = &chunk.data else {
-                        unreachable!();
-                    };
                     let copied = (chunk.len - chunk.offset).min(output_len - written);
-                    let source = &data.bind(py).as_bytes()[chunk.offset..chunk.offset + copied];
+                    if copied == 0 {
+                        continue;
+                    }
+                    let temporary;
+                    let source = match &chunk.data {
+                        BytesChunkData::Bytes(data) => {
+                            &data.bind(py).as_bytes()[chunk.offset..chunk.offset + copied]
+                        }
+                        BytesChunkData::MemoryView { data, .. } => {
+                            let view = if chunk.offset == 0 && copied == chunk.len {
+                                data.bind(py).clone()
+                            } else {
+                                data.bind(py).get_item(PySlice::new(
+                                    py,
+                                    chunk.offset as isize,
+                                    (chunk.offset + copied) as isize,
+                                    1,
+                                ))?
+                            };
+                            temporary = Self::buffer_bytes(&view)?;
+                            temporary.as_bytes()
+                        }
+                    };
                     std::ptr::copy_nonoverlapping(source.as_ptr(), buffer.add(written), copied);
                     written += copied;
                 }

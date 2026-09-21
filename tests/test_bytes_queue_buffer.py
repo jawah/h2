@@ -8,6 +8,7 @@ import tracemalloc
 import weakref
 from array import array
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from hypothesis import given, settings
@@ -151,6 +152,224 @@ def test_multiple_chunks_and_oversized_read():
     assert buffer.get(100) == b"arbaz"
 
 
+def test_put_many_iterator_can_reenter_queue():
+    buffer = _BytesQueueBuffer()
+
+    def chunks():
+        buffer.put(b"before")
+        yield b"prefix"
+        assert buffer.get(12) == b"beforeprefix"
+        buffer.put(b"nested")
+        yield b"suffix"
+
+    buffer.put_many(chunks())
+    assert buffer.get(100) == b"nestedsuffix"
+
+
+def test_put_many_iterator_can_hand_queue_to_another_thread():
+    buffer = _BytesQueueBuffer()
+
+    def consume_prefix():
+        assert len(buffer) == 6
+        assert buffer.get(6) == b"prefix"
+        buffer.put(b"nested")
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        def chunks():
+            yield b"prefix"
+            executor.submit(consume_prefix).result(timeout=10)
+            yield b"suffix"
+
+        buffer.put_many(chunks())
+
+    assert buffer.get(100) == b"nestedsuffix"
+
+
+def test_put_many_length_callback_can_reenter_queue():
+    buffer = _BytesQueueBuffer()
+
+    class EmptyItem:
+        def __len__(self):
+            buffer.put(b"nested")
+            return 0
+
+    buffer.put_many([b"prefix", EmptyItem(), b"suffix"])
+    assert buffer.get(100) == b"prefixnestedsuffix"
+
+
+def test_put_many_observes_items_appended_to_input_by_callback():
+    buffer = _BytesQueueBuffer()
+
+    class EmptyItem:
+        def __len__(self):
+            chunks.append(b"appended")
+            return 0
+
+    chunks = [b"prefix", EmptyItem()]
+    buffer.put_many(chunks)
+    assert buffer.get(100) == b"prefixappended"
+
+
+@pytest.mark.parametrize("base", (list, tuple))
+def test_put_many_respects_sequence_subclass_iteration(base):
+    buffer = _BytesQueueBuffer()
+
+    class Chunks(base):
+        def __iter__(self):
+            buffer.put(b"nested")
+            yield b"override"
+
+    buffer.put_many(Chunks([b"unused"]))
+    assert buffer.get(100) == b"nestedoverride"
+
+
+def test_put_many_iterator_error_keeps_completed_appends():
+    buffer = _BytesQueueBuffer()
+
+    def chunks():
+        yield b"prefix"
+        assert len(buffer) == 6
+        raise ValueError("iterator failed")
+
+    with pytest.raises(ValueError, match="iterator failed"):
+        buffer.put_many(chunks())
+    buffer.put(b"suffix")
+    assert buffer.get(100) == b"prefixsuffix"
+
+
+@cpython_only
+@pytest.mark.parametrize("sequence", (list, tuple))
+def test_put_many_view_allocation_gc_can_reenter_queue(sequence):
+    if not getattr(sys, "_is_gil_enabled", lambda: True)():
+        pytest.skip("free-threaded GC does not obey allocation thresholds alone")
+
+    buffer = _BytesQueueBuffer()
+    chunks = sequence([b"x"] + [memoryview(bytearray(b"x")) for _ in range(100)])
+    observations = []
+
+    def observe_collection(phase, info):
+        if phase == "start":
+            try:
+                observations.append(len(buffer))
+            except BaseException as exc:
+                observations.append(exc)
+
+    was_enabled = gc.isenabled()
+    thresholds = gc.get_threshold()
+    gc.collect()
+    gc.callbacks.append(observe_collection)
+    try:
+        gc.enable()
+        gc.set_threshold(1, 0, 0)
+        buffer.put_many(chunks)
+    finally:
+        gc.callbacks.remove(observe_collection)
+        gc.set_threshold(*thresholds)
+        if not was_enabled:
+            gc.disable()
+
+    assert all(isinstance(value, int) for value in observations), observations
+    # Newer CPython can defer automatic collections until after the C call.
+    if sys.version_info < (3, 12):
+        assert any(0 < value < len(chunks) for value in observations)
+    assert buffer.get(len(chunks)) == b"x" * len(chunks)
+
+
+@cpython_only
+@pytest.mark.parametrize("kind", ("bytes", "view", "strided"))
+@pytest.mark.parametrize("count", (1, 32))
+def test_consumed_chunk_finalizers_can_reenter_queue(kind, count):
+    buffer = _BytesQueueBuffer()
+    observations = []
+
+    def finalize():
+        try:
+            observations.append(len(buffer))
+            buffer.put(b"!")
+        except BaseException as exc:
+            observations.append(exc)
+
+    class BytesOwner(bytes):
+        def __del__(self):
+            finalize()
+
+    class ViewOwner(bytearray):
+        def __del__(self):
+            finalize()
+
+    for _ in range(count):
+        if kind == "bytes":
+            buffer.put(BytesOwner(b"abc"))
+        else:
+            stride = 2 if kind == "strided" else 1
+            payload = b"a_b_c_" if stride == 2 else b"abc"
+            buffer.put(memoryview(ViewOwner(payload))[::stride])
+    buffer.put(b"tail")
+
+    assert buffer.get(3 * count) == b"abc" * count
+    assert observations == list(range(4, 4 + count))
+    assert buffer.get(100) == b"tail" + b"!" * count
+
+
+@cpython_only
+@pytest.mark.parametrize("kind", ("bytes", "view"))
+def test_empty_chunk_finalizer_can_read_and_write_queue(kind):
+    buffer = _BytesQueueBuffer()
+    observations = []
+
+    class Owner(bytes if kind == "bytes" else bytearray):
+        def __del__(self):
+            try:
+                observations.append(buffer.get(4))
+                buffer.put(b"nested")
+            except BaseException as exc:
+                observations.append(exc)
+
+    buffer.put(Owner(b"") if kind == "bytes" else memoryview(Owner(b"")))
+    buffer.put(b"prefixtail")
+
+    assert buffer.get(6) == b"prefix"
+    assert observations == [b"tail"]
+    assert buffer.get(100) == b"nested"
+
+
+@cpython_only
+@pytest.mark.parametrize("fail", (False, True))
+def test_strided_owner_finalizer_runs_after_partial_read_or_error(fail):
+    buffer = _BytesQueueBuffer()
+    observations = []
+
+    class Owner(bytearray):
+        def __del__(self):
+            try:
+                observations.append(len(buffer))
+                buffer.put(b"!")
+            except BaseException as exc:
+                observations.append(exc)
+
+    buffer.put(memoryview(Owner(b"a_b_c_"))[::2])
+    if fail:
+        buffer.put(memoryview(bytearray(b"tail")))
+        queued_tail = next(
+            view for view in gc.get_referents(buffer)
+            if isinstance(view, memoryview) and view.nbytes == 4
+        )
+        queued_tail.release()
+        # join() reports TypeError for a released view on the legacy/FT path.
+        with pytest.raises(
+            (ValueError, TypeError),
+            match="released memoryview|expected a bytes-like object",
+        ):
+            buffer.get(7)
+        assert observations == [7]
+        assert buffer.get(3) == b"abc"
+        assert len(buffer) == 5
+    else:
+        assert buffer.get(1) == b"a"
+        assert observations == [2]
+        assert buffer.get(100) == b"bc!"
+
+
 def test_memoryview_input():
     buffer = _BytesQueueBuffer()
     buffer.put(memoryview(b"abcdef"))
@@ -178,6 +397,7 @@ def test_memoryview_is_not_copied_until_consumed():
         memoryview(b"abcdef")[::2],
         memoryview(b"abcdef")[::-1],
         memoryview(b"abcdef").cast("b"),
+        memoryview(b"abcdef").cast("H"),
         memoryview(b"abcdef").cast("B", shape=(2, 3)),
         memoryview(array("I", [1, 2, 3])),
         memoryview(array("I", [1, 2, 3]))[::2],
@@ -204,6 +424,41 @@ def test_contiguous_memoryview_remains_live_between_partial_reads():
     assert buffer.get(3) == b"abc"
     source[3:] = b"xyz"
     assert buffer.get(3) == b"xyz"
+    assert len(buffer) == 0
+
+
+@pytest.mark.parametrize("batch", (False, True))
+@pytest.mark.skipif(not hasattr(memoryview, "toreadonly"), reason="requires Python 3.8+")
+def test_readonly_memoryview_over_mutable_storage_remains_live(batch):
+    source = bytearray(b"abcdef")
+    view = memoryview(source).toreadonly()
+    buffer = _BytesQueueBuffer()
+    if batch:
+        buffer.put_many([view])
+    else:
+        buffer.put(view)
+    view.release()
+    source[0] = ord("z")
+    assert buffer.get(3) == b"zbc"
+    source[3:] = b"xyz"
+    assert buffer.get(3) == b"xyz"
+
+
+@pytest.mark.parametrize("transform", (
+    lambda view: view,
+    lambda view: view.cast("H"),
+    lambda view: view.cast("B", shape=(2, 3)),
+    lambda view: view[1:-1],
+    lambda view: view[::-1],
+))
+def test_immutable_memoryview_survives_original_release(transform):
+    view = transform(memoryview(b"abcdef"))
+    expected = view.tobytes()
+    buffer = _BytesQueueBuffer()
+    buffer.put(view)
+    view.release()
+    assert buffer.get(1) == expected[:1]
+    assert buffer.get(100) == expected[1:]
     assert len(buffer) == 0
 
 
@@ -268,7 +523,7 @@ def test_mixed_view_read_preserves_live_unread_tail(size):
 def test_failed_mixed_read_does_not_snapshot_mutable_views(size):
     source = bytearray(b"a" * size)
     buffer = _BytesQueueBuffer()
-    buffer.put_many([memoryview(source), memoryview(b"tail")])
+    buffer.put_many([memoryview(source), memoryview(bytearray(b"tail"))])
     queued_tail = next(
         view
         for view in gc.get_referents(buffer)
@@ -317,7 +572,7 @@ def test_partial_memoryview_read_keeps_export_alive():
 @pytest.mark.parametrize("stride", (1, 2))
 def test_failed_read_preserves_queued_prefix_and_size(stride):
     buffer = _BytesQueueBuffer()
-    buffer.put_many([b"prefix", memoryview(b"abcdef")[::stride]])
+    buffer.put_many([b"prefix", memoryview(bytearray(b"abcdef"))[::stride]])
     size = len(buffer)
     # Invalidate the queue's own view to force a failure after a valid prefix.
     queued_view = next(v for v in gc.get_referents(buffer) if isinstance(v, memoryview))
