@@ -114,6 +114,10 @@ def test_exact_bytes_chunk_is_returned_without_copying():
     assert buffer.get(len(chunk)) is chunk
 
 
+@pytest.mark.skipif(
+    platform.python_implementation() == "PyPy",
+    reason="PyPy cpyext can segfault converting bytes subclasses with overridden __len__",
+)
 @pytest.mark.parametrize("reported_length", (0, 100))
 @pytest.mark.parametrize("batch", (False, True))
 def test_bytes_subclass_length_does_not_change_byte_accounting(reported_length, batch):
@@ -219,7 +223,16 @@ def test_put_many_observes_items_appended_to_input_by_callback():
     assert buffer.get(100) == b"prefixappended"
 
 
-@pytest.mark.parametrize("base", (list, tuple))
+@pytest.mark.parametrize("base", (
+    list,
+    pytest.param(
+        tuple,
+        marks=pytest.mark.skipif(
+            platform.python_implementation() == "PyPy",
+            reason="PyPy cpyext conversion also invokes the tuple subclass iterator",
+        ),
+    ),
+))
 def test_put_many_respects_sequence_subclass_iteration(base):
     buffer = _BytesQueueBuffer()
 
@@ -471,6 +484,10 @@ def test_immutable_memoryview_survives_original_release(transform):
     assert len(buffer) == 0
 
 
+@pytest.mark.skipif(
+    platform.python_implementation() == "PyPy",
+    reason="PyPy can segfault passing a released memoryview to the native queue",
+)
 @pytest.mark.parametrize("batch", (False, True))
 def test_released_view_is_rejected_without_changing_queue(batch):
     buffer = _BytesQueueBuffer()
