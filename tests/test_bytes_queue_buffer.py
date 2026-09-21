@@ -4,7 +4,6 @@ import ctypes
 import gc
 import platform
 import sys
-import tracemalloc
 import weakref
 from array import array
 from collections import deque
@@ -13,6 +12,12 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+
+try:
+    import tracemalloc
+except ImportError:
+    # Some PyPy builds ship the wrapper without the native _tracemalloc module.
+    tracemalloc = None
 
 try:
     from jh2._hazmat import _BytesQueueBuffer
@@ -27,6 +32,10 @@ pytestmark = pytest.mark.skipif(
 cpython_only = pytest.mark.skipif(
     platform.python_implementation() != "CPython",
     reason="asserts CPython reference-release timing",
+)
+requires_tracemalloc = pytest.mark.skipif(
+    tracemalloc is None,
+    reason="tracemalloc is unavailable",
 )
 
 
@@ -488,6 +497,7 @@ def test_output_is_independent_of_mutable_source(stride):
 
 
 @cpython_only
+@requires_tracemalloc
 def test_strided_read_does_not_allocate_output_before_flattening():
     source = bytearray(8 * 1024 * 1024)
     view = memoryview(source)[::2]
@@ -601,6 +611,7 @@ def test_empty_multidimensional_memoryview(shape):
 
 
 @cpython_only
+@requires_tracemalloc
 @pytest.mark.parametrize("prefix", (b"", b"x"))
 def test_partial_memoryview_read_does_not_materialize_entire_view(prefix):
     source = bytearray(4 * 1024 * 1024)
@@ -620,6 +631,7 @@ def test_partial_memoryview_read_does_not_materialize_entire_view(prefix):
 
 
 @cpython_only
+@requires_tracemalloc
 @pytest.mark.parametrize("prefix", (b"", b"x", memoryview(b"x")))
 @pytest.mark.parametrize("oversized", (False, True))
 def test_large_memoryview_read_allocates_only_output_payload(prefix, oversized):
