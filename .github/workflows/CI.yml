@@ -31,6 +31,8 @@ jobs:
         name: Install pre-commit
       - run: pre-commit run --all
         name: Run pre-commit checks
+      - run: cargo clippy --all-targets --no-default-features --features abi3-py311 -- -Dclippy::all
+        name: Lint native buffer API build
 
   test:
     strategy:
@@ -38,6 +40,20 @@ jobs:
       matrix:
         os: [ubuntu-22.04, macos-14, windows-latest ]
         python_version: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', 'pypy-3.11']
+        abi: ['abi3-py37']
+        include:
+          - os: ubuntu-22.04
+            python_version: '3.11'
+            abi: abi3-py311
+          - os: ubuntu-22.04
+            python_version: '3.14'
+            abi: abi3-py311
+          - os: macos-14
+            python_version: '3.11'
+            abi: abi3-py311
+          - os: windows-latest
+            python_version: '3.11'
+            abi: abi3-py311
         exclude:
           - os: macos-14
             python_version: '3.7'
@@ -61,7 +77,7 @@ jobs:
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
-          args: --release --out dist --interpreter ${{ matrix.python_version }}
+          args: --release --out dist --interpreter ${{ matrix.python_version }} --no-default-features --features ${{ matrix.abi }}
           manylinux: auto
           docker-options: -e UNSAFE_PYO3_SKIP_VERSION_CHECK=1
       - name: Build wheels (NT)
@@ -70,7 +86,7 @@ jobs:
         env:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
-          args: --release --out dist --interpreter ${{ matrix.python_version }}
+          args: --release --out dist --interpreter ${{ matrix.python_version }} --no-default-features --features ${{ matrix.abi }}
           target: x64
       - run: pip install --find-links=./dist jh2
         name: Install built package
@@ -135,7 +151,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x86_64, aarch64, armv7, s390x, ppc64le, ppc64, i686]
-        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t' , '3.14t']
+        python_version: ['3.10', '3.11', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t' , '3.14t']
         manylinux: ['auto', 'musllinux_1_1']
         exclude:
           - manylinux: musllinux_1_1
@@ -159,7 +175,7 @@ jobs:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --interpreter ${{ matrix.python_version }}
+          args: --release --out dist --interpreter ${{ matrix.python_version }} ${{ matrix.python_version == '3.11' && '--no-default-features --features abi3-py311' || '' }}
           manylinux: ${{ matrix.manylinux }}
           docker-options: -e UNSAFE_PYO3_SKIP_VERSION_CHECK=1
       - name: Upload wheels
@@ -178,7 +194,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [x64, aarch64, x86]
-        python_version: ['3.10', '3.13t', '3.14t']
+        python_version: ['3.10', '3.11', '3.13t', '3.14t']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -196,7 +212,7 @@ jobs:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i ${{ matrix.python_version }}
+          args: --release --out dist -i ${{ matrix.python_version }} ${{ matrix.python_version == '3.11' && '--no-default-features --features abi3-py311' || '' }}
       - name: Build wheels (workaround arm64)
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b  # v1.51.0
         if: matrix.target == 'aarch64'
@@ -204,7 +220,7 @@ jobs:
           PYO3_CROSS: 1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i ${{ matrix.python_version }}
+          args: --release --out dist -i ${{ matrix.python_version }} ${{ matrix.python_version == '3.11' && '--no-default-features --features abi3-py311' || '' }}
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -221,7 +237,7 @@ jobs:
       fail-fast: false
       matrix:
         target: [universal2]
-        python_version: ['3.10', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t', '3.14t']
+        python_version: ['3.10', '3.11', 'pypy-3.7', 'pypy-3.8', 'pypy-3.9', 'pypy-3.10', 'pypy-3.11', '3.13t', '3.14t']
         exclude:
           - target: universal2
             python_version: 'pypy-3.7'
@@ -239,7 +255,7 @@ jobs:
           UNSAFE_PYO3_SKIP_VERSION_CHECK: 1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --interpreter ${{ matrix.python_version }}
+          args: --release --out dist --interpreter ${{ matrix.python_version }} ${{ matrix.python_version == '3.11' && '--no-default-features --features abi3-py311' || '' }}
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
