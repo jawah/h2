@@ -1,6 +1,11 @@
 Release History
 ===============
 
+5.0.15 (2026-09-21)
+------------------
+
+- General performance improvement. Up to 5% in typical workloads, especially with CPython 3.11+
+
 5.0.14 (2026-08-28)
 ------------------
 
