@@ -18,7 +18,7 @@ abi3-py37 = ["pyo3/abi3-py37"]
 abi3-py311 = ["pyo3/abi3-py311"]
 
 [build-dependencies]
-pyo3-build-config = { version = "0.28.2", features = ["resolve-config"] }
+pyo3-build-config = { version = "0.29.2", features = ["resolve-config"] }
 
 [package.metadata.maturin]
 python-source = "jh2"
